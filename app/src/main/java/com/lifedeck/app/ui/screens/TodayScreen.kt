@@ -88,7 +88,7 @@ fun TodayScreen(nav: NavController) {
     val todayStart = remember { todayStart() }
     val todayEnd = todayStart + 86_400_000L - 1
 
-    val openList = (openState ?: emptyList()).filter { it.status == EntryStatus.OPEN }
+    val openList = (openState ?: emptyList()).filter { it.status != EntryStatus.DONE }
     val inbox = inboxState ?: emptyList()
     val goals = goalsState ?: emptyList()
     val onThisDay = onThisDayState ?: emptyList()
