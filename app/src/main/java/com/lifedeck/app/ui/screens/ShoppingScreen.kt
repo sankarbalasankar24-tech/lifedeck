@@ -114,14 +114,13 @@ fun ShoppingScreen(nav: NavController) {
         TabRow(selectedTabIndex = tab) {
             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("List") })
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Trips (${trips.count { it.status.name == "ACTIVE" }})") })
-            Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Ledger") })
         }
 
         when (tab) {
             0 -> ShoppingListTab(
                 active = active,
                 onPurchase = { entry ->
-                    pricePromptFor = entry.id
+                    scope.launch { container.shopping.purchase(entry.id) }
                 },
                 onOpen = { nav.navigate(Routes.task(it)) },
                 onAdd = { showQuickAdd = true },

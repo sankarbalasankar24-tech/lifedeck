@@ -88,7 +88,7 @@ fun TodayScreen(nav: NavController) {
     val todayStart = remember { todayStart() }
     val todayEnd = todayStart + 86_400_000L - 1
 
-    val openList = openState ?: emptyList()
+    val openList = (openState ?: emptyList()).filter { it.status == EntryStatus.OPEN }
     val inbox = inboxState ?: emptyList()
     val goals = goalsState ?: emptyList()
     val onThisDay = onThisDayState ?: emptyList()
@@ -215,42 +215,6 @@ fun TodayScreen(nav: NavController) {
                         strokeCap = androidx.compose.ui.graphics.StrokeCap.Round,
                     )
                 }
-            }
-        }
-
-        // ---------- stat tiles ----------
-        item {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                StatPill(
-                    value = (dueToday.size).toString(),
-                    label = "Today",
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                )
-                StatPill(
-                    value = overdue.size.toString(),
-                    label = "Overdue",
-                    color = if (overdue.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFE53935),
-                    modifier = Modifier.weight(1f),
-                )
-                StatPill(
-                    value = inbox.size.toString(),
-                    label = "Inbox",
-                    color = if (inbox.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFFFB300),
-                    modifier = Modifier.weight(1f),
-                    onClick = { nav.navigate(Routes.INBOX) },
-                )
-                StatPill(
-                    value = appointments.size.toString(),
-                    label = "Meetings",
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.weight(1f),
-                )
             }
         }
 
