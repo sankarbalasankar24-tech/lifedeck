@@ -222,13 +222,7 @@ private fun CreateGoalDialog(onDismiss: () -> Unit, onCreate: (String, String, L
                     minLines = 2,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
-                    value = cost,
-                    onValueChange = { cost = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Estimated cost (optional)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FilterChip(
                         selected = targetDate != null,
