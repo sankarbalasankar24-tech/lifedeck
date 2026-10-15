@@ -154,6 +154,7 @@ fun LifeDeckRoot(initialSharedText: String? = null) {
 
     LifeDeckTheme(darkTheme = darkMode) {
         CompositionLocalProvider(
+            LocalAppContainer provides container,
             LocalUndo provides undo,
             LocalDensity provides scaledDensity,
         ) {

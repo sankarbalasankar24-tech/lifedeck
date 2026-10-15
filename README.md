@@ -109,9 +109,9 @@ In Android Studio: **Open** this folder → Run ▶.
 |---|---|
 | Application id | `com.lifedeck.app` (debug adds `.debug`) |
 | minSdk / targetSdk / compileSdk | 26 / 36 / 36 |
-| Version | 1.0.0 (`versionCode` 1) |
+| Version | 1.0.1 (`versionCode` 2) |
 
-Release build: configure a signing config in `app/build.gradle.kts` (keep the keystore **out** of git — `*.jks`, `keystore.properties` are already ignored) then `./gradlew :app:assembleRelease`.
+Release build: `./gradlew :app:assembleRelease` — signed automatically when `keystore.properties` + `keystore/lifedeck-release.jks` are present (they are **git-ignored here on purpose**). Restore them any time from the private GitHub repo **`lifedeck-keystore`** in the same account, or let CI sign: GitHub Actions secrets (`KEYSTORE_B64`, `KEYSTORE_STORE_PASSWORD`, `KEYSTORE_KEY_ALIAS`, `KEYSTORE_KEY_PASSWORD`) make every tag build release-signed without any local files. Without either, the build falls back to the debug key.
 
 ---
 
@@ -192,4 +192,4 @@ See [docs/TESTING.md](docs/TESTING.md) for the full script. Highlights:
 * No Google client secrets, API keys or tokens are compiled into the app or committed to the repo.
 * The Sheets endpoint URL + shared secret are **yours**, entered at runtime in Settings and stored in DataStore on the device only.
 * Photos, backups and the database live in app-private storage; only exports you explicitly share leave the device.
-* `*.jks`, `keystore.properties`, `secrets.properties`, `local.properties` are git-ignored.
+* `*.jks`, `keystore.properties`, `secrets.properties`, `local.properties` are git-ignored **in this public repo** — the release keystore is backed up in the private repo `lifedeck-keystore` (same account) and as GitHub Actions secrets, so signing never depends on this machine.

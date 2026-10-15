@@ -76,17 +76,22 @@ fun TodayScreen(nav: NavController) {
     val undo = LocalUndo.current
     val scope = rememberCoroutineScope()
 
-    val open by container.tasks.observeOpen().collectAsStateWithLifecycle(initialValue = emptyList())
-    val inbox by container.tasks.observeInbox().collectAsStateWithLifecycle(initialValue = emptyList())
-    val goals by container.structure.observeGoals().collectAsStateWithLifecycle(initialValue = emptyList())
+    // initialValue = null means "not emitted yet", which lets us tell a real
+    // empty database apart from a screen that is still loading.
+    val openState by container.tasks.observeOpen().collectAsStateWithLifecycle(initialValue = null)
+    val inboxState by container.tasks.observeInbox().collectAsStateWithLifecycle(initialValue = null)
+    val goalsState by container.structure.observeGoals().collectAsStateWithLifecycle(initialValue = null)
     val monthDay = remember { "%02d-%02d".format(LocalDate.now().monthValue, LocalDate.now().dayOfMonth) }
-    val onThisDay by container.memories.observeOnThisDay(monthDay).collectAsStateWithLifecycle(initialValue = emptyList())
+    val onThisDayState by container.memories.observeOnThisDay(monthDay).collectAsStateWithLifecycle(initialValue = null)
 
-    val nowTs = remember(open) { now() }
+    val nowTs = remember(openState) { now() }
     val todayStart = remember { todayStart() }
     val todayEnd = todayStart + 86_400_000L - 1
 
-    val openList = open
+    val openList = openState ?: emptyList()
+    val inbox = inboxState ?: emptyList()
+    val goals = goalsState ?: emptyList()
+    val onThisDay = onThisDayState ?: emptyList()
 
     val overdue = remember(openList) { openList.filter { isOverdue(it.dueAt ?: it.scheduledAt) && it.dueAt != null } }
     val dueToday = remember(openList) {
@@ -101,15 +106,18 @@ fun TodayScreen(nav: NavController) {
     val shoppingToday = remember(dueToday) { dueToday.filter { it.isShopping } }
     val undated = remember(openList) { openList.filter { it.dueAt == null && it.scheduledAt == null && it.startAt == null } }
 
-    val doneToday by container.tasks.observeCompletedBetween(todayStart, todayEnd + 1)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val doneTodayState by container.tasks.observeCompletedBetween(todayStart, todayEnd + 1)
+        .collectAsStateWithLifecycle(initialValue = null)
+    val doneToday = doneTodayState ?: emptyList()
 
     val plannedCount = dueToday.size + overdue.size
     val doneCount = doneToday.size
     val ratio = if (plannedCount + doneCount == 0) 0f else doneCount.toFloat() / (plannedCount + doneCount)
     val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
 
-    if (openList.isEmpty() && inbox.isEmpty() && doneToday.isEmpty() && goals.isEmpty()) {
+    val stillLoading = openState == null || inboxState == null ||
+        goalsState == null || onThisDayState == null || doneTodayState == null
+    if (stillLoading) {
         EmptyState(icon = Icons.Default.WbSunny, title = "Opening your day…", message = "Reading the local database")
         return
     }

@@ -255,13 +255,12 @@ fun QuickAddSheet(
         sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
+        Column(Modifier.fillMaxWidth().imePadding()) {
         Column(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .imePadding()
-                .padding(bottom = 24.dp),
+                .padding(horizontal = 20.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -447,6 +446,15 @@ fun QuickAddSheet(
             )
 
             Spacer(Modifier.height(16.dp))
+        }
+        // Pinned footer so Save stays reachable on any screen height, even with
+        // the keyboard open and a long parse preview.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+        ) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = { save(closeAfter = true) },
@@ -467,6 +475,7 @@ fun QuickAddSheet(
                     color = MaterialTheme.colorScheme.secondary,
                 )
             }
+        }
         }
     }
 
