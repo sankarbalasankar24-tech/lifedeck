@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LifeDeck</string>
+    <string name="quick_add">Quick Add</string>
+    <string name="notification_channel_reminders">Reminders</string>
+    <string name="notification_channel_summaries">Daily summaries</string>
+    <string name="notification_channel_tasks">Task alerts</string>
+    <string name="action_complete">Complete</string>
+    <string name="action_snooze">Snooze</string>
+    <string name="action_reschedule">Reschedule</string>
+</resources>

@@ -1,0 +1,26 @@
+# Gradle
+.gradle/
+build/
+app/build/
+local.properties
+
+# Android Studio / IntelliJ
+.kotlin/
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Tooling downloads (re-downloadable)
+.tooling/
+
+# Signing secrets - never commit
+*.jks
+*.keystore
+keystore.properties
+secrets.properties
+
+# Misc
+.DS_Store
+*.log

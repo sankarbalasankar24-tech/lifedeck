@@ -1,0 +1,72 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode release keystore (optional)
+        # If the repo defines these secrets, the APK is signed with the real
+        # release key; otherwise the build falls back to the debug key so an
+        # installable APK is always produced.
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            mkdir -p keystore
+            echo "$KEYSTORE_B64" | base64 -d > keystore/lifedeck-release.jks
+            {
+              echo "storeFile=keystore/lifedeck-release.jks"
+              echo "storePassword=${{ secrets.KEYSTORE_STORE_PASSWORD }}"
+              echo "keyAlias=${{ secrets.KEYSTORE_KEY_ALIAS }}"
+              echo "keyPassword=${{ secrets.KEYSTORE_KEY_PASSWORD }}"
+            } > keystore.properties
+            echo "Release keystore decoded."
+          else
+            echo "No keystore secrets set - release build will use the debug key."
+          fi
+
+      - name: Run unit tests
+        run: ./gradlew :app:testDebugUnitTest --console=plain
+
+      - name: Build release APK
+        run: ./gradlew :app:assembleRelease --console=plain
+
+      - name: Rename APK
+        run: |
+          VER=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk "out/LifeDeck-${VER}.apk"
+          echo "LIFEDECK_APK=out/LifeDeck-${VER}.apk" >> "$GITHUB_ENV"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LifeDeck-APK
+          path: out/*.apk
+          if-no-files-found: error
+
+      - name: Publish GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.apk
+          generate_release_notes: true
