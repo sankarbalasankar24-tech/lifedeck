@@ -44,6 +44,9 @@ jobs:
             echo "No keystore secrets set - release build will use the debug key."
           fi
 
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
       - name: Run unit tests
         run: ./gradlew :app:testDebugUnitTest --console=plain
 
