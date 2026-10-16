@@ -307,10 +307,17 @@ private fun bucketSection(
     if (list.isEmpty()) return
     scope.item { SectionHeader(title = title, subtitle = "${list.size} item${if (list.size == 1) "" else "s"}") }
     scope.items(list, key = { it.id }) { entry ->
+        val container = LocalAppContainer.current
+        val coroutineScope = rememberCoroutineScope()
         TaskCard(
             entry = entry,
             onToggle = { onPurchase(entry) },
             onClick = { onOpen(entry.id) },
+            onToggleMemory = {
+                coroutineScope.launch {
+                    container.tasks.toggleFavorite(entry.id, container.memories)
+                }
+            },
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
         )
     }

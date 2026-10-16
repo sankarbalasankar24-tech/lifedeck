@@ -23,6 +23,8 @@ import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -77,13 +79,12 @@ import kotlinx.coroutines.flow.collectLatest
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
+/** 4-tab bottom layout: right-handed thumb reach order (Today, Inbox, Shop, Goals from right to left). */
 private val tabs = listOf(
-    Tab(Routes.TODAY, "Today", Icons.Default.WbSunny),
-    Tab(Routes.INBOX, "Inbox", Icons.Default.Inbox),
     Tab(Routes.PROJECTS, "Goals", Icons.Default.TrackChanges),
     Tab(Routes.SHOPPING, "Shop", Icons.Default.ShoppingCart),
-    Tab(Routes.CALENDAR, "Calendar", Icons.Default.CalendarMonth),
-    Tab(Routes.HISTORY, "History", Icons.Default.History),
+    Tab(Routes.INBOX, "Inbox", Icons.Default.Inbox),
+    Tab(Routes.TODAY, "Today", Icons.Default.WbSunny),
 )
 
 /**
@@ -166,6 +167,9 @@ fun LifeDeckRoot(initialSharedText: String? = null) {
         ) {
             undo.undoWindowSeconds = settings.undoSeconds
 
+            val inboxList by container.tasks.observeInbox().collectAsStateWithLifecycle(initialValue = emptyList())
+            val unscheduledCount = inboxList.size
+
             val backStack by navController.currentBackStackEntryAsState()
             val currentRoute = backStack?.destination?.route
             val showBottomBar = currentRoute in Routes.bottomTabs
@@ -179,7 +183,19 @@ fun LifeDeckRoot(initialSharedText: String? = null) {
                                 NavigationBarItem(
                                     selected = currentRoute == tab.route,
                                     onClick = { navigateTab(navController, tab.route) },
-                                    icon = { Icon(tab.icon, contentDescription = tab.label) },
+                                    icon = {
+                                        if (tab.route == Routes.TODAY && unscheduledCount > 0) {
+                                            BadgedBox(badge = { Badge() }) {
+                                                Icon(tab.icon, contentDescription = tab.label)
+                                            }
+                                        } else if (tab.route == Routes.INBOX && unscheduledCount > 0) {
+                                            BadgedBox(badge = { Badge { Text("$unscheduledCount") } }) {
+                                                Icon(tab.icon, contentDescription = tab.label)
+                                            }
+                                        } else {
+                                            Icon(tab.icon, contentDescription = tab.label)
+                                        }
+                                    },
                                     label = { Text(tab.label) },
                                 )
                             }

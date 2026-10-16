@@ -27,6 +27,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Update
@@ -141,14 +144,32 @@ fun TodayScreen(nav: NavController) {
         return
     }
 
-    // Resolve milestone memory text for the persistent 48dp banner
-    val milestoneText = remember(onThisDay) {
-        if (onThisDay.isNotEmpty()) {
-            val mem = onThisDay.first()
-            val memYear = Instant.ofEpochMilli(mem.occurredAt).atZone(ZoneId.systemDefault()).year
-            val currentYear = LocalDate.now().year
-            val diff = (currentYear - memYear).coerceAtLeast(1)
-            "$diff year${if (diff == 1) "" else "s"} ago \"${mem.title}\""
+    // Background engine daily query: auto-injects if (Current Date - Memory Date) equals 6 months, 1 year, or N years
+    val dailyMilestoneMemory = remember(allMemoriesState, onThisDay) {
+        val today = LocalDate.now()
+        allMemoriesState.firstOrNull { mem ->
+            val memDate = Instant.ofEpochMilli(mem.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate()
+            val diffYears = today.year - memDate.year
+            val isSameMonthDay = today.monthValue == memDate.monthValue && Math.abs(today.dayOfMonth - memDate.dayOfMonth) <= 1
+            val sixMonthDate = memDate.plusMonths(6)
+            val isSixMonths = Math.abs(java.time.temporal.ChronoUnit.DAYS.between(sixMonthDate, today)) <= 2
+            (diffYears >= 1 && isSameMonthDay) || isSixMonths
+        } ?: onThisDay.firstOrNull() ?: allMemoriesState.firstOrNull()
+    }
+
+    val milestoneText = remember(dailyMilestoneMemory) {
+        if (dailyMilestoneMemory != null) {
+            val today = LocalDate.now()
+            val memDate = Instant.ofEpochMilli(dailyMilestoneMemory.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate()
+            val diffYears = today.year - memDate.year
+            val sixMonthDate = memDate.plusMonths(6)
+            val isSixMonths = Math.abs(java.time.temporal.ChronoUnit.DAYS.between(sixMonthDate, today)) <= 2
+            if (isSixMonths && diffYears < 1) {
+                "6 months ago \"${dailyMilestoneMemory.title}\""
+            } else {
+                val diff = diffYears.coerceAtLeast(1)
+                "$diff year${if (diff == 1) "" else "s"} ago \"${dailyMilestoneMemory.title}\""
+            }
         } else {
             "1 year ago \"First day of school\""
         }
@@ -165,8 +186,8 @@ fun TodayScreen(nav: NavController) {
             PersistentMemoryBanner(
                 milestoneText = milestoneText,
                 onClick = {
-                    if (onThisDay.isNotEmpty()) {
-                        nav.navigate(Routes.memory(onThisDay.first().id))
+                    if (dailyMilestoneMemory != null) {
+                        nav.navigate(Routes.memory(dailyMilestoneMemory.id))
                     } else {
                         nav.navigate(Routes.HISTORY)
                     }
@@ -209,6 +230,11 @@ fun TodayScreen(nav: NavController) {
                         entry = entry,
                         isOverdue = true,
                         isCompleting = isStriking,
+                        onToggleMemory = {
+                            scope.launch {
+                                container.tasks.toggleFavorite(entry.id, container.memories)
+                            }
+                        },
                         onToggle = {
                             completingIds[entry.id] = true
                             scope.launch {
@@ -256,6 +282,11 @@ fun TodayScreen(nav: NavController) {
                         entry = entry,
                         isOverdue = false,
                         isCompleting = isStriking,
+                        onToggleMemory = {
+                            scope.launch {
+                                container.tasks.toggleFavorite(entry.id, container.memories)
+                            }
+                        },
                         onToggle = {
                             completingIds[entry.id] = true
                             scope.launch {
@@ -293,6 +324,11 @@ fun TodayScreen(nav: NavController) {
                         entry = entry,
                         isOverdue = false,
                         isCompleting = isStriking,
+                        onToggleMemory = {
+                            scope.launch {
+                                container.tasks.toggleFavorite(entry.id, container.memories)
+                            }
+                        },
                         onToggle = {
                             completingIds[entry.id] = true
                             scope.launch {
@@ -589,6 +625,7 @@ private fun UnifiedPriorityRow(
     isOverdue: Boolean,
     isCompleting: Boolean,
     onToggle: () -> Unit,
+    onToggleMemory: () -> Unit,
     onReschedule: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
@@ -699,6 +736,19 @@ private fun UnifiedPriorityRow(
                         }
                     }
                 }
+            }
+
+            // Heart memory toggle button
+            IconButton(
+                onClick = onToggleMemory,
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    imageVector = if (entry.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = "Memory",
+                    modifier = Modifier.size(17.dp),
+                    tint = if (entry.favorite) Color(0xFFFF6D9D) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                )
             }
 
             // Reschedule button for overdue items

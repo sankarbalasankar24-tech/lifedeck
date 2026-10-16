@@ -441,9 +441,10 @@ class TaskRepository(
         }
     }
 
-    /** Heart a task: it becomes a candidate memory and shows on anniversaries. */
-    suspend fun toggleFavorite(id: String): Boolean {
+    /** Heart a task: it becomes a candidate memory, writes dedicated entry to Memories sheet and shows on anniversaries. */
+    suspend fun toggleFavorite(id: String, memories: MemoryRepository? = null): Boolean {
         var nowFavorite = false
+        var targetEntry: com.lifedeck.app.data.model.Entry? = null
         db.write { sqlite ->
             val entry = getOn(sqlite, id) ?: return@write
             val fav = !entry.favorite
@@ -455,8 +456,20 @@ class TaskRepository(
             history.record(
                 sqlite, EntityKind.ENTRY, id,
                 if (fav) HistoryAction.MEMORY_CREATED else HistoryAction.EDITED,
-                entry.title, if (fav) "Marked as a memory" else "Removed from memories",
+                entry.title, if (fav) "Marked as a memory · Saved to Memories sheet" else "Removed from memories",
             )
+            targetEntry = updated
+        }
+        targetEntry?.let { entry ->
+            if (memories != null) {
+                if (nowFavorite) {
+                    memories.createFromEntry(entry)
+                } else {
+                    memories.memoryForEntry(entry.id)?.let { mem ->
+                        memories.delete(mem.id)
+                    }
+                }
+            }
         }
         return nowFavorite
     }

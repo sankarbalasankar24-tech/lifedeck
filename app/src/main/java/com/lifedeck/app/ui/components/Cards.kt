@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -77,6 +78,7 @@ fun TaskCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     showScope: String? = null,
+    onToggleMemory: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val done = entry.status == EntryStatus.DONE
@@ -116,7 +118,20 @@ fun TaskCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (entry.favorite) {
+                    if (onToggleMemory != null) {
+                        Spacer(Modifier.width(4.dp))
+                        IconButton(
+                            onClick = onToggleMemory,
+                            modifier = Modifier.size(24.dp),
+                        ) {
+                            Icon(
+                                if (entry.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = "Memory",
+                                modifier = Modifier.size(14.dp),
+                                tint = if (entry.favorite) Color(0xFFFF6D9D) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            )
+                        }
+                    } else if (entry.favorite) {
                         Spacer(Modifier.width(4.dp))
                         Icon(
                             Icons.Default.Favorite,

@@ -13,6 +13,22 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material.icons.filled.AddTask
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.EventAvailable
@@ -73,6 +89,7 @@ fun InboxScreen(nav: NavController) {
 
     val inbox by container.tasks.observeInbox().collectAsStateWithLifecycle(initialValue = emptyList())
     var draft by remember { mutableStateOf("") }
+    var showCalendarPopup by remember { mutableStateOf(false) }
 
     fun capture(raw: String) {
         if (raw.isBlank()) return
@@ -121,12 +138,22 @@ fun InboxScreen(nav: NavController) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            // Interactive Calendar Month Grid Trigger
+            IconButton(
+                onClick = { showCalendarPopup = true },
+            ) {
+                Icon(
+                    Icons.Default.CalendarMonth,
+                    contentDescription = "Interactive Calendar Month Grid",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
             if (inbox.isNotEmpty()) {
                 Text(
                     "${inbox.size} waiting",
                     style = MaterialTheme.typography.labelLarge,
                     color = Color(0xFFF57F17),
-                    modifier = Modifier.padding(end = 12.dp),
+                    modifier = Modifier.padding(end = 8.dp),
                 )
             }
         }
@@ -244,6 +271,13 @@ fun InboxScreen(nav: NavController) {
 
         Spacer(Modifier.height(96.dp))
     }
+        if (showCalendarPopup) {
+            InboxCalendarDialog(
+                onDismiss = { showCalendarPopup = false },
+                nav = nav,
+            )
+        }
+
 }
 
 @Composable
@@ -255,9 +289,16 @@ private fun InboxCard(
     isDragging: Boolean,
 ) {
     Column(Modifier.padding(vertical = 4.dp)) {
+        val container = LocalAppContainer.current
+        val scope = rememberCoroutineScope()
         TaskCard(
             entry = entry,
             onToggle = onScheduleToday,
+            onToggleMemory = {
+                scope.launch {
+                    container.tasks.toggleFavorite(entry.id, container.memories)
+                }
+            },
             onClick = onOpen,
             trailing = {
                 Chip(
@@ -281,6 +322,300 @@ private fun InboxCard(
                 Icon(Icons.Default.AddTask, contentDescription = null, modifier = Modifier.width(14.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("Tomorrow")
+            }
+        }
+    }
+}
+
+@Composable
+private fun InboxCalendarDialog(
+    onDismiss: () -> Unit,
+    nav: NavController,
+) {
+    val container = LocalAppContainer.current
+    val scope = rememberCoroutineScope()
+    var selected by remember { mutableStateOf(LocalDate.now()) }
+    var monthAnchor by remember { mutableStateOf(LocalDate.now().withDayOfMonth(1)) }
+    val open by container.tasks.observeOpen().collectAsStateWithLifecycle(initialValue = emptyList())
+    val history by container.history.observe(limit = 300).collectAsStateWithLifecycle(initialValue = emptyList())
+
+    fun entriesOn(date: LocalDate): List<Entry> {
+        val start = date.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val end = start + 86_400_000L
+        return open.filter { e ->
+            listOfNotNull(e.scheduledAt, e.dueAt, e.startAt).any { it in start until end }
+        }.sortedBy { it.scheduledAt ?: it.dueAt ?: Long.MAX_VALUE }
+    }
+
+    val selectedEntries = entriesOn(selected)
+    val dayHistory = history.filter {
+        val d = java.time.Instant.ofEpochMilli(it.occurredAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        d == selected
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp)),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.CalendarMonth,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Calendar Overview",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            "Completed & pending by date",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = {
+                        selected = LocalDate.now()
+                        monthAnchor = LocalDate.now().withDayOfMonth(1)
+                    }) {
+                        Text("Today")
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { monthAnchor = monthAnchor.minusMonths(1) }) {
+                        Icon(Icons.Default.ChevronLeft, contentDescription = "Previous month")
+                    }
+                    Text(
+                        monthAnchor.format(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy")),
+                        modifier = Modifier.weight(1f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    IconButton(onClick = { monthAnchor = monthAnchor.plusMonths(1) }) {
+                        Icon(Icons.Default.ChevronRight, contentDescription = "Next month")
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                Row(Modifier.fillMaxWidth()) {
+                    listOf("M", "T", "W", "T", "F", "S", "S").forEach { d ->
+                        Text(
+                            d,
+                            modifier = Modifier.weight(1f),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                val first = com.lifedeck.app.util.weekStart(monthAnchor)
+                val days = (0 until 42).map { first.plusDays(it.toLong()) }
+
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(7),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp),
+                    userScrollEnabled = false,
+                ) {
+                    items(days, key = { it.toString() }) { date ->
+                        val openCount = entriesOn(date).size
+                        val doneCount = history.count {
+                            java.time.Instant.ofEpochMilli(it.occurredAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate() == date
+                        }
+                        val inMonth = date.monthValue == monthAnchor.monthValue
+                        val isToday = date == LocalDate.now()
+                        val isSel = date == selected
+
+                        Box(
+                            modifier = Modifier
+                                .padding(2.dp)
+                                .height(34.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                .background(
+                                    when {
+                                        isSel -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                        isToday -> MaterialTheme.colorScheme.surfaceVariant
+                                        else -> Color.Transparent
+                                    }
+                                )
+                                .then(
+                                    if (isSel) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                    else Modifier
+                                )
+                                .clickable { selected = date },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = date.dayOfMonth.toString(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (inMonth) {
+                                        if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                    },
+                                    fontWeight = if (isToday || isSel) FontWeight.Bold else FontWeight.Normal,
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    if (openCount > 0) {
+                                        Box(
+                                            Modifier
+                                                .size(4.dp)
+                                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                                .background(Color(0xFFF57F17))
+                                        )
+                                    }
+                                    if (doneCount > 0) {
+                                        Box(
+                                            Modifier
+                                                .size(4.dp)
+                                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                                .background(Color(0xFF10B981))
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                ) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text(
+                            text = com.lifedeck.app.util.dateLabelFor(selected),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "${selectedEntries.size} pending · ${dayHistory.size} completed",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                        Spacer(Modifier.height(6.dp))
+
+                        if (selectedEntries.isEmpty() && dayHistory.isEmpty()) {
+                            Text(
+                                "No tasks scheduled for this day.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(vertical = 8.dp),
+                            )
+                        } else {
+                            selectedEntries.forEach { entry ->
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    IconButton(
+                                        onClick = {
+                                            scope.launch { container.tasks.complete(entry.id) }
+                                        },
+                                        modifier = Modifier.size(24.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = "Done",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        entry.title,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            scope.launch { container.tasks.toggleFavorite(entry.id, container.memories) }
+                                        },
+                                        modifier = Modifier.size(24.dp),
+                                    ) {
+                                        Icon(
+                                            if (entry.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                            contentDescription = "Memory",
+                                            modifier = Modifier.size(14.dp),
+                                            tint = if (entry.favorite) Color(0xFFFF6D9D) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                        )
+                                    }
+                                }
+                            }
+                            dayHistory.forEach { ev ->
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(12.dp),
+                                        tint = Color(0xFF10B981),
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        ev.title,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

@@ -22,5 +22,5 @@ object Routes {
     fun trip(id: String) = "trip/$id"
     fun memory(id: String) = "memory/$id"
 
-    val bottomTabs = listOf(TODAY, INBOX, PROJECTS, SHOPPING, CALENDAR, HISTORY)
+    val bottomTabs = listOf(PROJECTS, SHOPPING, INBOX, TODAY)
 }
