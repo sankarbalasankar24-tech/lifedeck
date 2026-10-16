@@ -14,7 +14,12 @@ import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.WbSunny
-import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -182,11 +187,23 @@ fun LifeDeckRoot(initialSharedText: String? = null) {
                 },
                 floatingActionButton = {
                     if (showBottomBar) {
-                        ExtendedFloatingActionButton(
+                        FloatingActionButton(
                             onClick = { quickAddText = ""; quickAddVisible = true },
-                            icon = { Icon(Icons.Default.Inbox, contentDescription = null) },
-                            text = { Text("Quick Add") },
-                        )
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            shape = CircleShape,
+                            modifier = Modifier.size(48.dp),
+                            elevation = FloatingActionButtonDefaults.elevation(
+                                defaultElevation = 3.dp,
+                                pressedElevation = 6.dp,
+                            ),
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = "Quick Add",
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
                     }
                 },
             ) { padding ->
