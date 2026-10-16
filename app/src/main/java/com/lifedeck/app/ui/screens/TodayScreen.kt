@@ -145,7 +145,7 @@ fun TodayScreen(nav: NavController) {
     val milestoneText = remember(onThisDay) {
         if (onThisDay.isNotEmpty()) {
             val mem = onThisDay.first()
-            val memYear = Instant.ofEpochMilli(mem.recordedAt).atZone(ZoneId.systemDefault()).year
+            val memYear = Instant.ofEpochMilli(mem.occurredAt).atZone(ZoneId.systemDefault()).year
             val currentYear = LocalDate.now().year
             val diff = (currentYear - memYear).coerceAtLeast(1)
             "$diff year${if (diff == 1) "" else "s"} ago \"${mem.title}\""
@@ -213,7 +213,7 @@ fun TodayScreen(nav: NavController) {
                             completingIds[entry.id] = true
                             scope.launch {
                                 container.tasks.complete(entry.id)
-                                try { container.sync.triggerNow() } catch (_: Exception) {}
+                                try { container.syncCoordinator.syncAsync() } catch (_: Exception) {}
                                 delay(320L)
                                 completingIds.remove(entry.id)
                                 undo.show("Completed \"${entry.title}\"") {
@@ -225,7 +225,7 @@ fun TodayScreen(nav: NavController) {
                             scope.launch {
                                 val nextDue = now() + 86_400_000L
                                 container.tasks.update(entry.copy(dueAt = nextDue, scheduledAt = nextDue, dirty = true))
-                                try { container.sync.triggerNow() } catch (_: Exception) {}
+                                try { container.syncCoordinator.syncAsync() } catch (_: Exception) {}
                                 undo.show("Rescheduled to tomorrow") {
                                     scope.launch { container.tasks.update(entry) }
                                 }
@@ -260,7 +260,7 @@ fun TodayScreen(nav: NavController) {
                             completingIds[entry.id] = true
                             scope.launch {
                                 container.tasks.complete(entry.id)
-                                try { container.sync.triggerNow() } catch (_: Exception) {}
+                                try { container.syncCoordinator.syncAsync() } catch (_: Exception) {}
                                 delay(320L)
                                 completingIds.remove(entry.id)
                                 undo.show("Completed \"${entry.title}\"") {
@@ -297,7 +297,7 @@ fun TodayScreen(nav: NavController) {
                             completingIds[entry.id] = true
                             scope.launch {
                                 container.tasks.complete(entry.id)
-                                try { container.sync.triggerNow() } catch (_: Exception) {}
+                                try { container.syncCoordinator.syncAsync() } catch (_: Exception) {}
                                 delay(320L)
                                 completingIds.remove(entry.id)
                                 undo.show("Completed \"${entry.title}\"") {
