@@ -27,8 +27,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Search
-import com.lifedeck.app.ui.components.GlobalSearchDialog
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.IconButton
@@ -43,6 +41,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material.icons.filled.Search
+import com.lifedeck.app.ui.components.GlobalSearchDialog
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -399,13 +402,13 @@ fun TodayScreen(nav: NavController) {
             }
         }
     }
+
     if (showSearchDialog) {
         GlobalSearchDialog(
             onDismiss = { showSearchDialog = false },
             nav = nav,
         )
     }
-
 }
 
 /**
@@ -487,13 +490,6 @@ private fun PersistentMemoryBanner(
             }
         }
     }
-    if (showSearchDialog) {
-        GlobalSearchDialog(
-            onDismiss = { showSearchDialog = false },
-            nav = nav,
-        )
-    }
-
 }
 
 /**
@@ -620,13 +616,6 @@ private fun DynamicProgressCard(
             }
         }
     }
-    if (showSearchDialog) {
-        GlobalSearchDialog(
-            onDismiss = { showSearchDialog = false },
-            nav = nav,
-        )
-    }
-
 }
 
 /**
@@ -672,13 +661,6 @@ private fun StreamSectionHeader(
             )
         }
     }
-    if (showSearchDialog) {
-        GlobalSearchDialog(
-            onDismiss = { showSearchDialog = false },
-            nav = nav,
-        )
-    }
-
 }
 
 /**
@@ -852,11 +834,4 @@ private fun UnifiedPriorityRow(
             }
         }
     }
-    if (showSearchDialog) {
-        GlobalSearchDialog(
-            onDismiss = { showSearchDialog = false },
-            nav = nav,
-        )
-    }
-
 }
