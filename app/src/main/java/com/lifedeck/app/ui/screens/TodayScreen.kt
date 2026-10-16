@@ -27,6 +27,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Search
+import com.lifedeck.app.ui.components.GlobalSearchDialog
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.IconButton
@@ -101,6 +103,7 @@ fun TodayScreen(nav: NavController) {
 
     // Local map of entries currently in "strike-through" transitioning state
     val completingIds = remember { mutableStateMapOf<String, Boolean>() }
+    var showSearchDialog by remember { mutableStateOf(false) }
 
     val openList = (openState ?: emptyList()).filter { it.status != EntryStatus.DONE }
     val onThisDay = onThisDayState ?: emptyList()
@@ -180,6 +183,43 @@ fun TodayScreen(nav: NavController) {
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 96.dp),
     ) {
+        // 0. Top Bar with Universal Global Search
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        text = "LifeDeck",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = com.lifedeck.app.util.formatDate(com.lifedeck.app.util.now()),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                IconButton(
+                    onClick = { showSearchDialog = true },
+                    modifier = Modifier
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = "Universal Global Search",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+
         // -------------------------------------------------------------
         // 1. PERSISTENT MEMORY BANNER: Single slim 48dp card at the top
         // -------------------------------------------------------------
@@ -359,6 +399,13 @@ fun TodayScreen(nav: NavController) {
             }
         }
     }
+    if (showSearchDialog) {
+        GlobalSearchDialog(
+            onDismiss = { showSearchDialog = false },
+            nav = nav,
+        )
+    }
+
 }
 
 /**
@@ -440,6 +487,13 @@ private fun PersistentMemoryBanner(
             }
         }
     }
+    if (showSearchDialog) {
+        GlobalSearchDialog(
+            onDismiss = { showSearchDialog = false },
+            nav = nav,
+        )
+    }
+
 }
 
 /**
@@ -566,6 +620,13 @@ private fun DynamicProgressCard(
             }
         }
     }
+    if (showSearchDialog) {
+        GlobalSearchDialog(
+            onDismiss = { showSearchDialog = false },
+            nav = nav,
+        )
+    }
+
 }
 
 /**
@@ -611,6 +672,13 @@ private fun StreamSectionHeader(
             )
         }
     }
+    if (showSearchDialog) {
+        GlobalSearchDialog(
+            onDismiss = { showSearchDialog = false },
+            nav = nav,
+        )
+    }
+
 }
 
 /**
@@ -784,4 +852,11 @@ private fun UnifiedPriorityRow(
             }
         }
     }
+    if (showSearchDialog) {
+        GlobalSearchDialog(
+            onDismiss = { showSearchDialog = false },
+            nav = nav,
+        )
+    }
+
 }
