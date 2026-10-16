@@ -94,6 +94,7 @@ fun TodayScreen(nav: NavController) {
     val openState by container.tasks.observeOpen().collectAsStateWithLifecycle(initialValue = null)
     val monthDay = remember { "%02d-%02d".format(LocalDate.now().monthValue, LocalDate.now().dayOfMonth) }
     val onThisDayState by container.memories.observeOnThisDay(monthDay).collectAsStateWithLifecycle(initialValue = null)
+    val allMemoriesState by container.memories.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
     val nowTs = remember(openState) { now() }
     val todayStart = remember { todayStart() }
     val todayEnd = todayStart + 86_400_000L - 1
