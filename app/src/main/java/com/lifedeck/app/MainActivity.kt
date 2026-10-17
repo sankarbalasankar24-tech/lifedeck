@@ -24,6 +24,19 @@ import com.lifedeck.app.service.FloatingBubbleService
  */
 class MainActivity : ComponentActivity() {
 
+    data class DeepLink(val taskId: String? = null, val screen: String? = null, val sharedText: String? = null)
+
+    object IntentExtra {
+        const val SHARE_TEXT = "android.intent.extra.TEXT"
+        const val OPEN_TASK_ID = "com.lifedeck.app.OPEN_TASK_ID"
+        const val OPEN_SCREEN = "com.lifedeck.app.OPEN_SCREEN"
+    }
+
+    companion object {
+        val deepLinks = kotlinx.coroutines.flow.MutableSharedFlow<DeepLink>(replay = 1, extraBufferCapacity = 4)
+    }
+
+
     private lateinit var webView: WebView
 
     @SuppressLint("SetJavaScriptEnabled")
