@@ -93,21 +93,26 @@ class SyncCoordinator(
         var pushed = 0
         var error: String? = null
 
-        // 1) Push every pending change.
+        // 1) Push pending changes; if queue is empty, push all local database rows so sheet is populated!
         val pending = syncRepo.pending()
-        if (pending.isNotEmpty()) {
-            val rows = buildPushRows(pending)
-            if (rows.isNotEmpty()) {
-                val res = sheets.push(rows, deviceId)
-                if (res.ok) {
-                    pushed = pending.size
+        val rows = if (pending.isNotEmpty()) {
+            buildPushRows(pending)
+        } else {
+            buildFullDatabasePushRows()
+        }
+
+        if (rows.isNotEmpty()) {
+            val res = sheets.push(rows, deviceId)
+            if (res.ok) {
+                pushed = rows.size
+                if (pending.isNotEmpty()) {
                     syncRepo.markSucceeded(pending.map { it.id })
-                } else {
-                    error = res.error.ifBlank { "Push failed" }
-                    syncRepo.markFailed(pending.map { it.id }, error)
                 }
             } else {
-                syncRepo.markSucceeded(pending.map { it.id })
+                error = res.error.ifBlank { "Push failed" }
+                if (pending.isNotEmpty()) {
+                    syncRepo.markFailed(pending.map { it.id }, error)
+                }
             }
         }
 
@@ -167,6 +172,50 @@ class SyncCoordinator(
     }
 
     /** Load current rows for pending queue items and serialize them. */
+    /** Build push rows for all existing database rows to populate an initial or empty sheet. */
+    private suspend fun buildFullDatabasePushRows(): List<PushRow> {
+        val out = mutableListOf<PushRow>()
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        db.read { sqlite ->
+            // Entries
+            sqlite.rawQuery("SELECT * FROM entries", null).use { c ->
+                while (c.moveToNext()) {
+                    val e = c.toEntry()
+                    out.add(PushRow(SyncTables.ENTRIES, e.id, "UPSERT", json.parseToJsonElement(encode(e))))
+                }
+            }
+            // Goals
+            sqlite.rawQuery("SELECT * FROM goals", null).use { c ->
+                while (c.moveToNext()) {
+                    val g = c.toGoal()
+                    out.add(PushRow(SyncTables.GOALS, g.id, "UPSERT", json.parseToJsonElement(encode(g))))
+                }
+            }
+            // Projects
+            sqlite.rawQuery("SELECT * FROM projects", null).use { c ->
+                while (c.moveToNext()) {
+                    val p = c.toProject()
+                    out.add(PushRow(SyncTables.PROJECTS, p.id, "UPSERT", json.parseToJsonElement(encode(p))))
+                }
+            }
+            // Milestones
+            sqlite.rawQuery("SELECT * FROM milestones", null).use { c ->
+                while (c.moveToNext()) {
+                    val m = c.toMilestone()
+                    out.add(PushRow(SyncTables.MILESTONES, m.id, "UPSERT", json.parseToJsonElement(encode(m))))
+                }
+            }
+            // Categories
+            sqlite.rawQuery("SELECT * FROM categories", null).use { c ->
+                while (c.moveToNext()) {
+                    val cat = c.toCategory()
+                    out.add(PushRow(SyncTables.CATEGORIES, cat.id, "UPSERT", json.parseToJsonElement(encode(cat))))
+                }
+            }
+        }
+        return out
+    }
+
     private suspend fun buildPushRows(items: List<SyncQueueItem>): List<PushRow> {
         val out = mutableListOf<PushRow>()
         val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true }

@@ -122,40 +122,58 @@ class SheetsClient(private val settings: SettingsRepository) {
         data class Error(val message: String) : NetResult()
     }
 
-    private fun post(url: String, body: String): NetResult = try {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.connectTimeout = 15_000
-        conn.readTimeout = 30_000
-        conn.doOutput = true
-        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-        val code = conn.responseCode
-        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-        val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
-        if (code in 200..299) NetResult.Ok(text)
-        else NetResult.Error("HTTP $code ${text.take(200)}")
+    private fun executeWithRedirects(
+        initialUrl: String,
+        method: String,
+        body: String? = null,
+    ): NetResult = try {
+        var currentUrl = initialUrl
+        var currentMethod = method
+        var currentBody = body
+        var redirects = 0
+        val maxRedirects = 6
+        var finalResult: NetResult? = null
+
+        while (redirects < maxRedirects) {
+            val conn = URL(currentUrl).openConnection() as HttpURLConnection
+            conn.instanceFollowRedirects = false
+            conn.connectTimeout = 20_000
+            conn.readTimeout = 30_000
+            conn.requestMethod = currentMethod
+
+            if (currentMethod == "POST" && currentBody != null) {
+                conn.doOutput = true
+                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                conn.outputStream.use { it.write(currentBody.toByteArray(Charsets.UTF_8)) }
+            }
+
+            val code = conn.responseCode
+            if (code in 300..399) {
+                val loc = conn.getHeaderField("Location") ?: conn.getHeaderField("location")
+                if (loc != null) {
+                    currentUrl = loc
+                    currentMethod = "GET"
+                    currentBody = null
+                    redirects++
+                    continue
+                }
+            }
+
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+            finalResult = if (code in 200..299) NetResult.Ok(text) else NetResult.Error("HTTP $code ${text.take(200)}")
+            break
+        }
+        finalResult ?: NetResult.Error("Too many redirects")
     } catch (e: IOException) {
         NetResult.Error(e.message ?: "Network error")
     } catch (e: Exception) {
         NetResult.Error(e.message ?: "Request failed")
     }
 
-    private fun get(url: String): NetResult = try {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.requestMethod = "GET"
-        conn.connectTimeout = 15_000
-        conn.readTimeout = 30_000
-        val code = conn.responseCode
-        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-        val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
-        if (code in 200..299) NetResult.Ok(text)
-        else NetResult.Error("HTTP $code ${text.take(200)}")
-    } catch (e: IOException) {
-        NetResult.Error(e.message ?: "Network error")
-    } catch (e: Exception) {
-        NetResult.Error(e.message ?: "Request failed")
-    }
+    private fun post(url: String, body: String): NetResult = executeWithRedirects(url, "POST", body)
+
+    private fun get(url: String): NetResult = executeWithRedirects(url, "GET", null)
 
     /** Small helper for building structured payloads in tests/scripts. */
     fun pingBody(secret: String): String = buildJsonObject {

@@ -24,6 +24,7 @@ private val Context.settingsStore by preferencesDataStore(name = "lifedeck_setti
 data class AppSettings(
     // ---- appearance ----
     val themeMode: String = "SYSTEM", // SYSTEM | LIGHT | DARK
+    val themePalette: String = "BOTANICAL_DARK",
     val textScale: Float = 1.0f,      // accessibility: 0.85 .. 1.5
     val dynamicColor: Boolean = true,
     // ---- schedules (minutes of day) ----

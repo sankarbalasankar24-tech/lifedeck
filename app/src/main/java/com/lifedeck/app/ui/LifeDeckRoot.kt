@@ -159,7 +159,7 @@ fun LifeDeckRoot(initialSharedText: String? = null) {
         density.fontScale * settings.textScale,
     )
 
-    LifeDeckTheme(darkTheme = darkMode) {
+    LifeDeckTheme(darkTheme = darkMode, palette = settings.themePalette) {
         CompositionLocalProvider(
             LocalAppContainer provides container,
             LocalUndo provides undo,

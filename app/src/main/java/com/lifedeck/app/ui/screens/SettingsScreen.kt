@@ -28,6 +28,11 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -185,17 +190,67 @@ fun SettingsScreen(nav: NavController) {
                 }
             }
         }
-        // ---------------------------------------------------- appearance
-        item { SettingsHeader(Icons.Default.Palette, "Appearance") }
+        // ---------------------------------------------------- visual theme & color palette
+        item { SettingsHeader(Icons.Default.Palette, "Visual Theme & Color Palette") }
         item {
-            SettingRow("Theme") {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("SYSTEM" to "System", "LIGHT" to "Light", "DARK" to "Dark").forEach { (mode, label) ->
-                        FilterChip(
-                            selected = settings.themeMode == mode,
-                            onClick = { update { it.copy(themeMode = mode) } },
-                            label = { Text(label) },
-                        )
+            val palettes = listOf(
+                Triple("BOTANICAL_DARK", "Botanical Nocturne", 0xFF4EDEA3),
+                Triple("OBSIDIAN", "OLED Obsidian", 0xFF6FFBBE),
+                Triple("DEEP_FOREST", "Deep Forest", 0xFF34D399),
+                Triple("SOLAR_DUSK", "Solar Dusk", 0xFFFBBF24),
+                Triple("BOTANICAL_LIGHT", "Botanical Light", 0xFF059669),
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                palettes.forEach { (id, name, colorVal) ->
+                    val isSelected = settings.themePalette == id
+                    Surface(
+                        onClick = { update { it.copy(themePalette = id) } },
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isSelected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(colorVal)),
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            if (isSelected) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -447,33 +502,7 @@ fun SettingsScreen(nav: NavController) {
 
         // ---------------------------------------------------- sync
         item { SettingsHeader(Icons.Default.CloudSync, "Google Sheets sync") }
-        item {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 6.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            ) {
-                Column(Modifier.padding(12.dp)) {
-                    Text(
-                        "How to connect Google Sheets:",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "1. Create a sheet at sheets.new (e.g. LifeDeck Vault)\n" +
-                        "2. In Extensions → Apps Script, paste the LifeDeck bridge script\n" +
-                        "3. Click Deploy → New deployment → Web app (Anyone access)\n" +
-                        "4. Paste the Web App URL below and tap Sync",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
+
         item {
             SettingRow("Sync enabled") {
                 Switch(checked = settings.syncEnabled, onCheckedChange = { v -> update { it.copy(syncEnabled = v) } })
