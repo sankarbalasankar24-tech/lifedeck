@@ -93,7 +93,6 @@ fun InboxScreen(nav: NavController) {
     val inbox by container.tasks.observeInbox().collectAsStateWithLifecycle(initialValue = emptyList())
     var draft by remember { mutableStateOf("") }
     var showCalendarPopup by remember { mutableStateOf(false) }
-    var showSearchDialog by remember { mutableStateOf(false) }
 
     fun capture(raw: String) {
         if (raw.isBlank()) return
@@ -142,16 +141,7 @@ fun InboxScreen(nav: NavController) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            // Global Universal Search Trigger
-            IconButton(
-                onClick = { showSearchDialog = true },
-            ) {
-                Icon(
-                    Icons.Default.Search,
-                    contentDescription = "Universal Global Search",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+
             // Interactive Calendar Month Grid Trigger
             IconButton(
                 onClick = { showCalendarPopup = true },
@@ -286,12 +276,7 @@ fun InboxScreen(nav: NavController) {
         Spacer(Modifier.height(96.dp))
     }
 
-        if (showSearchDialog) {
-            GlobalSearchDialog(
-                onDismiss = { showSearchDialog = false },
-                nav = nav,
-            )
-        }
+
 
         if (showCalendarPopup) {
             InboxCalendarDialog(

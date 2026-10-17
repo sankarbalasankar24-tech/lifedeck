@@ -26,6 +26,19 @@ class BootReceiver : BroadcastReceiver() {
                 app.container.scheduler.reconcileAsync()
                 // Re-arm periodic maintenance (idempotent).
                 com.lifedeck.app.sync.MaintenanceWorker.schedule(app)
+                // Restart floating bubble overlay service if permission is active
+                try {
+                    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M ||
+                        android.provider.Settings.canDrawOverlays(app)) {
+                        val bubbleIntent = Intent(app, com.lifedeck.app.service.FloatingBubbleService::class.java)
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            app.startForegroundService(bubbleIntent)
+                        } else {
+                            app.startService(bubbleIntent)
+                        }
+                    }
+                } catch (_: Exception) {}
+
                 // Give the scheduler a moment, then run a full pass.
                 kotlinx.coroutines.delay(1_500)
                 app.container.scheduler.reconcile()

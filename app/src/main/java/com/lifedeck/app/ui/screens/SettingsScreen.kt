@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -122,6 +123,66 @@ fun SettingsScreen(nav: NavController) {
             }
         }
 
+        // ---------------------------------------------------- floating overlay
+        item { SettingsHeader(Icons.Default.FlashOn, "Floating Quick Entry") }
+        item {
+            val canOverlay = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M ||
+                android.provider.Settings.canDrawOverlays(context)
+            SettingRow("Display over other apps") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Persistent button floats over all apps & restarts",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (!canOverlay) {
+                            Text(
+                                "Requires overlay permission",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                    if (!canOverlay) {
+                        TextButton(onClick = {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                                val intent = android.content.Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    android.net.Uri.parse("package:" + context.packageName),
+                                )
+                                context.startActivity(intent)
+                            }
+                        }) {
+                            Text("Grant")
+                        }
+                    } else {
+                        Switch(
+                            checked = true,
+                            onCheckedChange = { isChecked ->
+                                val bubbleIntent = android.content.Intent(
+                                    context,
+                                    com.lifedeck.app.service.FloatingBubbleService::class.java,
+                                )
+                                if (isChecked) {
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                        context.startForegroundService(bubbleIntent)
+                                    } else {
+                                        context.startService(bubbleIntent)
+                                    }
+                                } else {
+                                    context.stopService(bubbleIntent)
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
         // ---------------------------------------------------- appearance
         item { SettingsHeader(Icons.Default.Palette, "Appearance") }
         item {
@@ -384,6 +445,34 @@ fun SettingsScreen(nav: NavController) {
 
         // ---------------------------------------------------- sync
         item { SettingsHeader(Icons.Default.CloudSync, "Google Sheets sync") }
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                ),
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text(
+                        "How to connect Google Sheets:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "1. Create a sheet at sheets.new (e.g. LifeDeck Vault)\n" +
+                        "2. In Extensions → Apps Script, paste the LifeDeck bridge script\n" +
+                        "3. Click Deploy → New deployment → Web app (Anyone access)\n" +
+                        "4. Paste the Web App URL below and tap Sync",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
         item {
             SettingRow("Sync enabled") {
                 Switch(checked = settings.syncEnabled, onCheckedChange = { v -> update { it.copy(syncEnabled = v) } })

@@ -45,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import com.lifedeck.app.ui.components.GlobalSearchDialog
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -208,17 +209,31 @@ fun TodayScreen(nav: NavController) {
                         fontWeight = FontWeight.Bold,
                     )
                 }
-                IconButton(
-                    onClick = { showSearchDialog = true },
-                    modifier = Modifier
-                        .clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
-                ) {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = "Universal Global Search",
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(
+                        onClick = { showSearchDialog = true },
+                        modifier = Modifier
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                    ) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = "Universal Global Search",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    IconButton(
+                        onClick = { nav.navigate(Routes.SETTINGS) },
+                        modifier = Modifier
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                    ) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "Settings & Preferences",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
