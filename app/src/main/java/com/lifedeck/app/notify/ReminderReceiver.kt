@@ -120,6 +120,7 @@ class ReminderReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION_FIRE = "com.lifedeck.app.action.REMINDER_FIRE"
+        const val ACTION_DIRECT_ALARM = "com.lifedeck.app.action.DIRECT_ALARM"
         const val EXTRA_REQUEST_CODE = "request_code"
         const val EXTRA_PAYLOAD = "payload"
         const val MEMORY_CODE_BASE = 900_000_000
