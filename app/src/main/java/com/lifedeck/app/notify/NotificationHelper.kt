@@ -62,6 +62,31 @@ class NotificationHelper(private val context: Context) {
         NotificationManagerCompat.from(context).notify(notificationId, notification)
     }
 
+    fun showDirectAlarm(id: String, title: String, type: String) {
+        if (!canPost) return
+        val prefs = context.getSharedPreferences("lifedeck_prefs", Context.MODE_PRIVATE)
+        val soundUriStr = prefs.getString("alarm_sound_uri", null)
+        val soundUri = if (!soundUriStr.isNullOrBlank()) {
+            android.net.Uri.parse(soundUriStr)
+        } else {
+            android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
+        }
+        val openIntent = taskIntent(id, fromNotification = true)
+        val notification = NotificationCompat.Builder(context, NotificationChannels.REMINDERS)
+            .setSmallIcon(R.drawable.ic_stat_lifedeck)
+            .setContentTitle("⏰ Reminder: $title")
+            .setContentText("Scheduled LifeDeck alarm reminder is due now")
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setSound(soundUri)
+            .setVibrate(longArrayOf(0, 500, 250, 500, 250, 500))
+            .setAutoCancel(true)
+            .setContentIntent(openIntent)
+            .setFullScreenIntent(openIntent, true)
+            .build()
+        NotificationManagerCompat.from(context).notify(("alarm:$id").hashCode() and 0x7FFFFFFF, notification)
+    }
+
     /** Morning / evening review notification. */
     fun showSummary(title: String, text: String, bigText: String, id: Int) {
         if (!canPost) return

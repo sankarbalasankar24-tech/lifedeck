@@ -20,6 +20,13 @@ import kotlinx.coroutines.launch
 class ReminderReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == ACTION_DIRECT_ALARM) {
+            val id = intent.getStringExtra("EXTRA_ID") ?: ("alarm-" + System.currentTimeMillis())
+            val title = intent.getStringExtra("EXTRA_TITLE") ?: "Task Reminder"
+            val type = intent.getStringExtra("EXTRA_TYPE") ?: "TASK"
+            NotificationHelper(context).showDirectAlarm(id, title, type)
+            return
+        }
         if (intent.action != ReminderReceiver.ACTION_FIRE) return
         val code = intent.getIntExtra(EXTRA_REQUEST_CODE, -1)
         val payload = intent.getStringExtra(EXTRA_PAYLOAD)
