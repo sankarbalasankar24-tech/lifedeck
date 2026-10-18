@@ -150,6 +150,15 @@ class MainActivity : ComponentActivity() {
             }
 
             webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    if (intent.getBooleanExtra("OPEN_QUICK_ADD", false)) {
+                        view?.postDelayed({
+                            view.evaluateJavascript("window.dispatchEvent(new CustomEvent('lifedeck:quickadd'))", null)
+                        }, 200)
+                    }
+                }
+
                 override fun shouldInterceptRequest(
                     view: WebView,
                     request: WebResourceRequest,
@@ -391,52 +400,73 @@ class MainActivity : ComponentActivity() {
             val prefs = getSharedPreferences("lifedeck_prefs", Context.MODE_PRIVATE)
             prefs.edit().putString("sheets_webhook_url", webhookUrl).apply()
 
+            // Update Android repository settings so background MaintenanceWorker syncs automatically
+            try {
+                val app = applicationContext as? com.lifedeck.app.LifeDeckApp
+                app?.container?.settings?.let { repo ->
+                    kotlinx.coroutines.runBlocking {
+                        repo.update { it.copy(syncUrl = webhookUrl, syncEnabled = true) }
+                    }
+                }
+            } catch (_: Exception) {}
+
             return try {
                 var currentUrl = webhookUrl.trim()
                 if (currentUrl.contains("/edit")) {
                     currentUrl = currentUrl.replace(Regex("/edit.*$"), "/exec")
                 }
 
-                var connection = (java.net.URL(currentUrl).openConnection() as java.net.HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    doOutput = true
-                    instanceFollowRedirects = true
-                    connectTimeout = 15000
-                    readTimeout = 15000
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                }
-                connection.outputStream.use { os ->
-                    os.write(payloadJson.toByteArray(Charsets.UTF_8))
-                    os.flush()
+                if (currentUrl.contains("docs.google.com/spreadsheets")) {
+                    return """{"ok":false,"error":"Please paste your Google Apps Script Web App URL (ending in /exec), not the spreadsheet viewer URL."}"""
                 }
 
-                var responseCode = connection.responseCode
-                // Handle Google Apps Script 302 redirect manually if necessary
-                if (responseCode in 300..399) {
-                    val redirectUrl = connection.getHeaderField("Location")
-                    if (redirectUrl != null) {
-                        connection.disconnect()
-                        val redirectConn = (java.net.URL(redirectUrl).openConnection() as java.net.HttpURLConnection).apply {
-                            requestMethod = "GET"
-                            instanceFollowRedirects = true
-                            connectTimeout = 15000
-                            readTimeout = 15000
+                var currentMethod = "POST"
+                var currentBody: String? = payloadJson
+                var redirects = 0
+                val maxRedirects = 6
+                var finalResponse = """{"ok":false,"error":"Too many redirects"}"""
+
+                while (redirects < maxRedirects) {
+                    val conn = (java.net.URL(currentUrl).openConnection() as java.net.HttpURLConnection).apply {
+                        instanceFollowRedirects = false
+                        connectTimeout = 20_000
+                        readTimeout = 30_000
+                        requestMethod = currentMethod
+                        if (currentMethod == "POST" && currentBody != null) {
+                            doOutput = true
+                            setRequestProperty("Content-Type", "application/json; charset=utf-8")
                         }
-                        responseCode = redirectConn.responseCode
-                        val body = redirectConn.inputStream.bufferedReader().use { it.readText() }
-                        redirectConn.disconnect()
-                        return body
                     }
-                }
 
-                val body = if (responseCode in 200..299) {
-                    connection.inputStream.bufferedReader().use { it.readText() }
-                } else {
-                    val err = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
-                    """{"ok":false,"error":"HTTP $responseCode: $err"}"""
+                    if (currentMethod == "POST" && currentBody != null) {
+                        conn.outputStream.use { it.write(currentBody.toByteArray(Charsets.UTF_8)) }
+                    }
+
+                    val code = conn.responseCode
+                    if (code in 300..399) {
+                        val loc = conn.getHeaderField("Location") ?: conn.getHeaderField("location")
+                        if (loc != null) {
+                            currentUrl = loc
+                            currentMethod = "GET"
+                            currentBody = null
+                            redirects++
+                            conn.disconnect()
+                            continue
+                        }
+                    }
+
+                    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                    val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                    conn.disconnect()
+
+                    if (code in 200..299) {
+                        finalResponse = if (text.isBlank()) """{"ok":true,"count":1}""" else text
+                    } else {
+                        finalResponse = """{"ok":false,"error":"HTTP $code: ${text.take(160)}"}"""
+                    }
+                    break
                 }
-                connection.disconnect()
-                body
+                finalResponse
             } catch (e: Exception) {
                 android.util.Log.e("LifeDeckSync", "Native sheets sync failed", e)
                 """{"ok":false,"error":${JSONObject.quote(e.message ?: "Network error")}}"""

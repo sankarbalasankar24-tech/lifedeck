@@ -15,37 +15,27 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
-import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
-import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.lifedeck.app.MainActivity
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
+import com.lifedeck.app.R
 
+/**
+ * Always-on Floating Quick Entry Calendar Bubble.
+ * Displays a single calendar bubble over any screen or app.
+ * Tapping opens the signature LifeDeck Quick Entry popup.
+ * Persists across notifications clearing, app closing, and device reboot.
+ */
 class FloatingBubbleService : Service() {
 
     private var windowManager: WindowManager? = null
     private var bubbleView: View? = null
     private var params: WindowManager.LayoutParams? = null
-
-    private var overlayDialogView: View? = null
-    private var overlayParams: WindowManager.LayoutParams? = null
 
     private lateinit var prefs: SharedPreferences
 
@@ -104,17 +94,17 @@ class FloatingBubbleService : Service() {
             this.alpha = savedAlpha
         }
 
+        // Calendar icon button with dark nocturnal background and emerald accents
         val imageView = ImageView(this).apply {
-            setImageResource(android.R.drawable.ic_input_add)
-            setColorFilter(Color.parseColor("#003824"))
+            setImageResource(R.drawable.ic_bubble_calendar)
             val bg = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#4EDEA3"))
-                setStroke(dp(3), Color.parseColor("#6FFBBE"))
+                setColor(Color.parseColor("#141D1B"))
+                setStroke(dp(1.5f), Color.parseColor("#4EDEA3"))
             }
             background = bg
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            elevation = dp(16).toFloat()
+            setPadding(dp(13), dp(13), dp(13), dp(13))
+            elevation = dp(14).toFloat()
         }
 
         var initialX = 0
@@ -148,7 +138,12 @@ class FloatingBubbleService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (isClick) {
-                        showFloatingQuickEntry()
+                        // Launch LifeDeck and open the exact Photo 3 Quick Entry popup
+                        val launchIntent = Intent(this, MainActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                            putExtra("OPEN_QUICK_ADD", true)
+                        }
+                        startActivity(launchIntent)
                     }
                     true
                 }
@@ -162,331 +157,18 @@ class FloatingBubbleService : Service() {
         } catch (_: Exception) {}
     }
 
-    private fun showFloatingQuickEntry() {
-        if (overlayDialogView != null) return // Already open
-
-        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
-
-        overlayParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_DIM_BEHIND,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            dimAmount = 0.55f
-            gravity = Gravity.CENTER
-        }
-
-        var selectedCategory = "TASK"
-        var selectedPriority = "NORMAL"
-        var selectedDue = "TODAY"
-
-        // Root scrim
-        val rootLayout = FrameLayout(this).apply {
-            setBackgroundColor(Color.parseColor("#99060B0A"))
-            setOnClickListener { dismissOverlay() }
-        }
-
-        // Card container
-        val cardLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val bg = GradientDrawable().apply {
-                setColor(Color.parseColor("#141D1B"))
-                cornerRadius = dp(24).toFloat()
-                setStroke(dp(1), Color.parseColor("#273B37"))
-            }
-            background = bg
-            setPadding(dp(20), dp(18), dp(20), dp(20))
-            isClickable = true
-            isFocusable = true
-        }
-
-        val cardParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            gravity = Gravity.CENTER
-            setMargins(dp(20), 0, dp(20), 0)
-        }
-
-        // 1. Header with Close Button
-        val headerLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val titleView = TextView(this).apply {
-            text = "⚡ LifeDeck Quick Capture"
-            textSize = 16f
-            setTextColor(Color.parseColor("#F2F7F4"))
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val closeBtn = TextView(this).apply {
-            text = "✕"
-            textSize = 18f
-            setTextColor(Color.parseColor("#9BB3AA"))
-            setPadding(dp(8), dp(8), dp(8), dp(8))
-            setOnClickListener { dismissOverlay() }
-        }
-        headerLayout.addView(titleView)
-        headerLayout.addView(closeBtn)
-        cardLayout.addView(headerLayout)
-
-        // 2. Input Field
-        val inputField = EditText(this).apply {
-            hint = "Type task, grocery, or project..."
-            setHintTextColor(Color.parseColor("#6B827A"))
-            setTextColor(Color.parseColor("#F2F7F4"))
-            textSize = 15f
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            val bg = GradientDrawable().apply {
-                setColor(Color.parseColor("#090F0F"))
-                cornerRadius = dp(14).toFloat()
-                setStroke(dp(1), Color.parseColor("#273B37"))
-            }
-            background = bg
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(14)
-                bottomMargin = dp(12)
-            }
-            layoutParams = lp
-        }
-        cardLayout.addView(inputField)
-
-        // 3. Category Capsules: [Task] [Shop] [Project]
-        val catLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(10) }
-            layoutParams = lp
-        }
-
-        val catButtons = mutableListOf<Button>()
-        val categories = listOf("TASK" to "Task", "SHOP" to "Shop", "PROJECT" to "Project")
-        categories.forEach { (catId, catLabel) ->
-            val btn = Button(this).apply {
-                text = catLabel
-                textSize = 12f
-                isAllCaps = false
-                layoutParams = LinearLayout.LayoutParams(0, dp(38), 1f).apply {
-                    setMargins(dp(3), 0, dp(3), 0)
-                }
-            }
-            catButtons.add(btn)
-            catLayout.addView(btn)
-        }
-
-        fun updateCatStyles() {
-            catButtons.forEachIndexed { idx, btn ->
-                val (catId, _) = categories[idx]
-                val isSel = catId == selectedCategory
-                btn.setTextColor(Color.parseColor(if (isSel) "#4EDEA3" else "#9BB3AA"))
-                btn.background = GradientDrawable().apply {
-                    setColor(Color.parseColor(if (isSel) "#183B2E" else "#111917"))
-                    cornerRadius = dp(12).toFloat()
-                    setStroke(dp(1), Color.parseColor(if (isSel) "#4EDEA3" else "#273B37"))
-                }
-                btn.setOnClickListener {
-                    selectedCategory = catId
-                    updateCatStyles()
-                }
-            }
-        }
-        updateCatStyles()
-        cardLayout.addView(catLayout)
-
-        // 4. Due Date Capsules: [Today] [Tomorrow]
-        val dueLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(14) }
-            layoutParams = lp
-        }
-        val dueButtons = mutableListOf<Button>()
-        val dueOptions = listOf("TODAY" to "Today", "TOMORROW" to "Tomorrow")
-        dueOptions.forEach { (dId, dLabel) ->
-            val btn = Button(this).apply {
-                text = dLabel
-                textSize = 11f
-                isAllCaps = false
-                layoutParams = LinearLayout.LayoutParams(0, dp(34), 1f).apply {
-                    setMargins(dp(3), 0, dp(3), 0)
-                }
-            }
-            dueButtons.add(btn)
-            dueLayout.addView(btn)
-        }
-        fun updateDueStyles() {
-            dueButtons.forEachIndexed { idx, btn ->
-                val (dId, _) = dueOptions[idx]
-                val isSel = dId == selectedDue
-                btn.setTextColor(Color.parseColor(if (isSel) "#4EDEA3" else "#9BB3AA"))
-                btn.background = GradientDrawable().apply {
-                    setColor(Color.parseColor(if (isSel) "#183B2E" else "#111917"))
-                    cornerRadius = dp(10).toFloat()
-                    setStroke(dp(1), Color.parseColor(if (isSel) "#4EDEA3" else "#273B37"))
-                }
-                btn.setOnClickListener {
-                    selectedDue = dId
-                    updateDueStyles()
-                }
-            }
-        }
-        updateDueStyles()
-        cardLayout.addView(dueLayout)
-
-        // 5. Save Button
-        val saveBtn = Button(this).apply {
-            text = "Save to LifeDeck"
-            textSize = 14f
-            isAllCaps = false
-            setTextColor(Color.parseColor("#003824"))
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#4EDEA3"))
-                cornerRadius = dp(14).toFloat()
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(44)
-            )
-            setOnClickListener {
-                val text = inputField.text.toString().trim()
-                if (text.isEmpty()) {
-                    dismissOverlay()
-                    return@setOnClickListener
-                }
-
-                saveEntryLocallyAndSync(text, selectedCategory, selectedPriority, selectedDue)
-                Toast.makeText(this@FloatingBubbleService, "✓ Saved to LifeDeck & Synced", Toast.LENGTH_SHORT).show()
-                dismissOverlay()
-            }
-        }
-        cardLayout.addView(saveBtn)
-
-        rootLayout.addView(cardLayout, cardParams)
-        overlayDialogView = rootLayout
-
-        try {
-            windowManager?.addView(overlayDialogView, overlayParams)
-        } catch (_: Exception) {}
-    }
-
-    private fun dismissOverlay() {
-        overlayDialogView?.let {
-            try {
-                windowManager?.removeView(it)
-            } catch (_: Exception) {}
-            overlayDialogView = null
-        }
-    }
-
-    private fun saveEntryLocallyAndSync(
-        text: String,
-        category: String,
-        priority: String,
-        due: String
-    ) {
-        val now = System.currentTimeMillis()
-        val dueTimestamp = if (due == "TOMORROW") now + 86400000L else now
-
-        val entryObj = JSONObject().apply {
-            put("id", "entry-$now")
-            put("title", text)
-            put("type", if (category == "SHOP") "SHOPPING" else "TASK")
-            put("status", "ACTIVE")
-            put("priority", priority)
-            put("dueAt", dueTimestamp)
-            put("scheduledAt", dueTimestamp)
-            put("createdAt", now)
-            put("updatedAt", now)
-        }
-
-        // Store into pending overlay entries in prefs
-        try {
-            val existing = prefs.getString("pending_overlay_entries", "[]") ?: "[]"
-            val array = JSONArray(existing)
-            array.put(entryObj)
-            prefs.edit().putString("pending_overlay_entries", array.toString()).apply()
-        } catch (e: Exception) {
-            android.util.Log.e("LifeDeckBubble", "Error saving overlay entry", e)
-        }
-
-        // Send to Google Sheets immediately if webhook URL is configured
-        val webhookUrl = prefs.getString("sheets_webhook_url", null)
-        if (!webhookUrl.isNullOrBlank()) {
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    var currentUrl = webhookUrl.trim()
-                    if (currentUrl.contains("/edit")) {
-                        currentUrl = currentUrl.replace(Regex("/edit.*$"), "/exec")
-                    }
-
-                    val rowObj = JSONObject().apply {
-                        put("id", "entry-$now")
-                        put("op", "CREATE")
-                        put("title", text)
-                        put("status", "ACTIVE")
-                        put("type", if (category == "SHOP") "SHOPPING" else "TASK")
-                        put("priority", priority)
-                        put("createdAt", java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).format(now))
-                        put("dueAt", java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).format(dueTimestamp))
-                        put("row", entryObj)
-                    }
-
-                    val payload = JSONObject().apply {
-                        put("table", "LifeDeck")
-                        put("rows", JSONArray().put(rowObj))
-                    }
-
-                    val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
-                        requestMethod = "POST"
-                        doOutput = true
-                        connectTimeout = 12000
-                        readTimeout = 12000
-                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    }
-
-                    conn.outputStream.use { os ->
-                        os.write(payload.toString().toByteArray(Charsets.UTF_8))
-                        os.flush()
-                    }
-
-                    val code = conn.responseCode
-                    conn.disconnect()
-                    android.util.Log.d("LifeDeckBubble", "Sheets quick sync response: $code")
-                } catch (err: Exception) {
-                    android.util.Log.w("LifeDeckBubble", "Background sheets sync failed", err)
-                }
-            }
-        }
-    }
-
-    private fun dp(value: Int): Int {
+    private fun dp(value: Float): Int {
         return TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
-            value.toFloat(),
+            value,
             resources.displayMetrics
         ).toInt()
     }
 
+    private fun dp(value: Int): Int = dp(value.toFloat())
+
     override fun onDestroy() {
         super.onDestroy()
-        dismissOverlay()
         bubbleView?.let {
             try {
                 windowManager?.removeView(it)
@@ -510,7 +192,9 @@ class FloatingBubbleService : Service() {
     }
 
     private fun createNotification(): Notification {
-        val intent = Intent(this, MainActivity::class.java)
+        val intent = Intent(this, MainActivity::class.java).apply {
+            putExtra("OPEN_QUICK_ADD", true)
+        }
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
@@ -520,8 +204,8 @@ class FloatingBubbleService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("LifeDeck Quick Entry Active")
-            .setContentText("Always-on floating button is ready")
-            .setSmallIcon(android.R.drawable.ic_input_add)
+            .setContentText("Tap floating calendar bubble to capture entries")
+            .setSmallIcon(R.drawable.ic_stat_lifedeck)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
