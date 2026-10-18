@@ -410,67 +410,86 @@ class MainActivity : ComponentActivity() {
                 }
             } catch (_: Exception) {}
 
-            return try {
-                var currentUrl = webhookUrl.trim()
-                if (currentUrl.contains("/edit")) {
-                    currentUrl = currentUrl.replace(Regex("/edit.*$"), "/exec")
-                }
-
-                if (currentUrl.contains("docs.google.com/spreadsheets")) {
-                    return """{"ok":false,"error":"Please paste your Google Apps Script Web App URL (ending in /exec), not the spreadsheet viewer URL."}"""
-                }
-
-                var currentMethod = "POST"
-                var currentBody: String? = payloadJson
-                var redirects = 0
-                val maxRedirects = 6
-                var finalResponse = """{"ok":false,"error":"Too many redirects"}"""
-
-                while (redirects < maxRedirects) {
-                    val conn = (java.net.URL(currentUrl).openConnection() as java.net.HttpURLConnection).apply {
-                        instanceFollowRedirects = false
-                        connectTimeout = 20_000
-                        readTimeout = 30_000
-                        requestMethod = currentMethod
-                        if (currentMethod == "POST" && currentBody != null) {
-                            doOutput = true
-                            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                        }
-                    }
-
-                    if (currentMethod == "POST" && currentBody != null) {
-                        conn.outputStream.use { it.write(currentBody.toByteArray(Charsets.UTF_8)) }
-                    }
-
-                    val code = conn.responseCode
-                    if (code in 300..399) {
-                        val loc = conn.getHeaderField("Location") ?: conn.getHeaderField("location")
-                        if (loc != null) {
-                            currentUrl = loc
-                            currentMethod = "GET"
-                            currentBody = null
-                            redirects++
-                            conn.disconnect()
-                            continue
-                        }
-                    }
-
-                    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                    val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
-                    conn.disconnect()
-
-                    if (code in 200..299) {
-                        finalResponse = if (text.isBlank()) """{"ok":true,"count":1}""" else text
-                    } else {
-                        finalResponse = """{"ok":false,"error":"HTTP $code: ${text.take(160)}"}"""
-                    }
-                    break
-                }
-                finalResponse
-            } catch (e: Exception) {
-                android.util.Log.e("LifeDeckSync", "Native sheets sync failed", e)
-                """{"ok":false,"error":${JSONObject.quote(e.message ?: "Network error")}}"""
+            var cleanUrl = webhookUrl.trim()
+            if (cleanUrl.contains("/edit")) {
+                cleanUrl = cleanUrl.replace(Regex("/edit.*$"), "/exec")
             }
+            if (cleanUrl.contains("/dev")) {
+                cleanUrl = cleanUrl.replace(Regex("/dev.*$"), "/exec")
+            }
+
+            if (cleanUrl.contains("docs.google.com/spreadsheets")) {
+                return """{"ok":false,"error":"Please paste your Google Apps Script Web App URL (ending in /exec), not the spreadsheet viewer URL."}"""
+            }
+
+            var attempt = 0
+            var finalResponse = """{"ok":false,"error":"Unable to connect to Google Sheets."}"""
+
+            while (attempt < 3) {
+                attempt++
+                try {
+                    var currentUrl = cleanUrl
+                    var currentMethod = "POST"
+                    var currentBody: String? = payloadJson
+                    var redirects = 0
+                    val maxRedirects = 6
+                    var success = false
+
+                    while (redirects < maxRedirects) {
+                        val conn = (java.net.URL(currentUrl).openConnection() as java.net.HttpURLConnection).apply {
+                            instanceFollowRedirects = false
+                            connectTimeout = 20_000
+                            readTimeout = 30_000
+                            requestMethod = currentMethod
+                            if (currentMethod == "POST" && currentBody != null) {
+                                doOutput = true
+                                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                            }
+                        }
+
+                        if (currentMethod == "POST" && currentBody != null) {
+                            conn.outputStream.use { it.write(currentBody.toByteArray(Charsets.UTF_8)) }
+                        }
+
+                        val code = conn.responseCode
+                        if (code in 300..399) {
+                            val loc = conn.getHeaderField("Location") ?: conn.getHeaderField("location")
+                            if (loc != null) {
+                                currentUrl = loc
+                                currentMethod = "GET"
+                                currentBody = null
+                                redirects++
+                                conn.disconnect()
+                                continue
+                            }
+                        }
+
+                        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                        val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                        conn.disconnect()
+
+                        if (code in 200..299) {
+                            finalResponse = if (text.isBlank()) """{"ok":true,"count":1}""" else text
+                            success = true
+                        } else {
+                            finalResponse = """{"ok":false,"error":"HTTP $code: ${text.take(160)}"}"""
+                        }
+                        break
+                    }
+
+                    if (success) {
+                        return finalResponse
+                    }
+                } catch (e: Exception) {
+                    finalResponse = """{"ok":false,"error":${JSONObject.quote(e.message ?: "Connection error")}}"""
+                }
+
+                if (attempt < 3) {
+                    try { Thread.sleep(1200L * attempt) } catch (_: Exception) {}
+                }
+            }
+
+            return finalResponse
         }
 
         @JavascriptInterface
