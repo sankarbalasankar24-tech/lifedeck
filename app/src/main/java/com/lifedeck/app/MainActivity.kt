@@ -6,7 +6,10 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -21,6 +24,7 @@ import com.lifedeck.app.service.FloatingBubbleService
 /**
  * High-fidelity native host delivering pixel-for-pixel parity with the studio preview.
  * Loads optimized, offline local assets via Google WebViewAssetLoader with zero network latency.
+ * Robust navigation handling ensures no crashes or accidental closures on tab or button clicks.
  */
 class MainActivity : ComponentActivity() {
 
@@ -35,7 +39,6 @@ class MainActivity : ComponentActivity() {
     companion object {
         val deepLinks = kotlinx.coroutines.flow.MutableSharedFlow<DeepLink>(replay = 1, extraBufferCapacity = 4)
     }
-
 
     private lateinit var webView: WebView
 
@@ -64,7 +67,10 @@ class MainActivity : ComponentActivity() {
                 cacheMode = WebSettings.LOAD_DEFAULT
                 useWideViewPort = true
                 loadWithOverviewMode = true
+                builtInZoomControls = false
+                displayZoomControls = false
             }
+
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(
                     view: WebView,
@@ -72,7 +78,40 @@ class MainActivity : ComponentActivity() {
                 ): WebResourceResponse? {
                     return assetLoader.shouldInterceptRequest(request.url)
                 }
+
+                override fun shouldOverrideUrlLoading(
+                    view: WebView,
+                    request: WebResourceRequest,
+                ): Boolean {
+                    val url = request.url.toString()
+                    if (url.startsWith("https://appassets.androidplatform.net") || url.startsWith("file://")) {
+                        return false // stay in webview
+                    }
+                    return try {
+                        val intent = Intent(Intent.ACTION_VIEW, request.url)
+                        view.context.startActivity(intent)
+                        true
+                    } catch (e: Exception) {
+                        true
+                    }
+                }
+
+                override fun onReceivedError(
+                    view: WebView,
+                    request: WebResourceRequest,
+                    error: WebResourceError,
+                ) {
+                    android.util.Log.w("LifeDeckWeb", "Web error: ${error.description}")
+                }
             }
+
+            webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                    android.util.Log.d("LifeDeckWeb", "${message.message()} (${message.sourceId()}:${message.lineNumber()})")
+                    return true
+                }
+            }
+
             addJavascriptInterface(LifeDeckBridge(this@MainActivity), "LifeDeckNative")
         }
 
