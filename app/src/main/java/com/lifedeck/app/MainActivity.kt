@@ -79,6 +79,13 @@ class MainActivity : ComponentActivity() {
     }
 
     // Launcher for system sound selection (Alarm & Notification ringtones)
+    private val notificationPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        val result = if (isGranted) "granted" else "denied"
+        webView.evaluateJavascript("window.onNotificationPermissionResult && window.onNotificationPermissionResult('$result')", null)
+    }
+
     private val ringtonePickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -211,11 +218,12 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webView.canGoBack()) {
-                    webView.goBack()
-                } else {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
+                webView.evaluateJavascript("window.handleAndroidBackPressed ? window.handleAndroidBackPressed() : false") { result ->
+                    val consumed = result == "true" || result == "\"true\""
+                    if (!consumed) {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
                 }
             }
         })
@@ -250,6 +258,61 @@ class MainActivity : ComponentActivity() {
     }
 
     inner class LifeDeckBridge(private val context: Context) {
+
+        @JavascriptInterface
+        fun requestNotificationPermission() {
+            runOnUiThread {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    if (androidx.core.content.ContextCompat.checkSelfPermission(this@MainActivity, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        webView.evaluateJavascript("window.onNotificationPermissionResult && window.onNotificationPermissionResult('granted')", null)
+                    } else {
+                        notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                } else {
+                    val enabled = androidx.core.app.NotificationManagerCompat.from(this@MainActivity).areNotificationsEnabled()
+                    val result = if (enabled) "granted" else "denied"
+                    webView.evaluateJavascript("window.onNotificationPermissionResult && window.onNotificationPermissionResult('$result')", null)
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun checkNotificationPermission(): String {
+            return if (androidx.core.app.NotificationManagerCompat.from(this@MainActivity).areNotificationsEnabled()) {
+                "granted"
+            } else {
+                "denied"
+            }
+        }
+
+        @JavascriptInterface
+        fun updateNotificationSettings(
+            morningHour: Int,
+            morningMinute: Int,
+            morningEnabled: Boolean,
+            eveningHour: Int,
+            eveningMinute: Int,
+            eveningEnabled: Boolean,
+        ) {
+            val app = applicationContext as? com.lifedeck.app.LifeDeckApp ?: return
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    app.container.settings.update {
+                        it.copy(
+                            morningSummaryHour = morningHour,
+                            morningSummaryMinute = morningMinute,
+                            morningSummaryEnabled = morningEnabled,
+                            eveningSummaryHour = eveningHour,
+                            eveningSummaryMinute = eveningMinute,
+                            eveningSummaryEnabled = eveningEnabled,
+                        )
+                    }
+                    app.container.scheduler.reconcile()
+                } catch (e: Exception) {
+                    android.util.Log.e("LifeDeckNative", "Error updating notification settings", e)
+                }
+            }
+        }
 
         @JavascriptInterface
         fun startVoiceInput() {
