@@ -130,6 +130,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        instance = this
 
         val assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
@@ -233,6 +234,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        webView.evaluateJavascript("window.importOverlayEntries && window.importOverlayEntries()", null)
         // If overlay permission was just granted and user enabled floating bubble, start it
         val prefs = getSharedPreferences("lifedeck_prefs", Context.MODE_PRIVATE)
         val enabled = prefs.getBoolean("floating_bubble_enabled", false)
