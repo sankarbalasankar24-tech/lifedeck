@@ -1,5 +1,6 @@
 package com.lifedeck.app.service
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.app.DatePickerDialog
@@ -8,24 +9,23 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
-import android.os.Bundle
 import android.os.IBinder
-import android.os.SystemClock
 import android.provider.Settings
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
@@ -34,11 +34,15 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.app.AlarmManagerCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.lifedeck.app.MainActivity
 import com.lifedeck.app.R
+import com.lifedeck.app.notify.ReminderReceiver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -46,24 +50,20 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 
 /**
- * Robust Foreground Floating Quick Entry Bubble Service.
- * Matches the exact design from image_2a174de6.png with working speech-to-text mic access.
- * Saves immediately to app state and Google Sheets in the background without launching MainActivity.
- * Runs with FOREGROUND_SERVICE_TYPE_SPECIAL_USE and auto-restarts on boot and onTaskRemoved.
+ * High-performance, persistent Foreground Service hosting the LifeDeck Quick Entry overlay
+ * and always-on floating botanical bubble.
  */
 class FloatingBubbleService : Service() {
 
     private var windowManager: WindowManager? = null
     private var bubbleView: View? = null
-    private var params: WindowManager.LayoutParams? = null
     private var overlayDialogView: View? = null
-
-    private var speechRecognizer: SpeechRecognizer? = null
-    private var isListening = false
-
+    private var params: WindowManager.LayoutParams? = null
     private lateinit var prefs: SharedPreferences
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -71,6 +71,7 @@ class FloatingBubbleService : Service() {
     override fun onCreate() {
         super.onCreate()
         prefs = getSharedPreferences("lifedeck_prefs", Context.MODE_PRIVATE)
+        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         createNotificationChannel()
 
         if (Build.VERSION.SDK_INT >= 34) {
@@ -108,31 +109,24 @@ class FloatingBubbleService : Service() {
         return START_STICKY
     }
 
-    /**
-     * Stricter persistence: auto-restart service when apps are cleared from recents.
-     */
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         try {
-            val restartIntent = Intent(applicationContext, FloatingBubbleService::class.java).apply {
+            val restartServiceIntent = Intent(applicationContext, FloatingBubbleService::class.java).apply {
                 setPackage(packageName)
             }
-            val pendingIntent = PendingIntent.getService(
-                this, 1994, restartIntent,
-                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
-            )
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            alarmManager.set(
-                AlarmManager.ELAPSED_REALTIME,
-                SystemClock.elapsedRealtime() + 600,
-                pendingIntent
-            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(restartServiceIntent)
+            } else {
+                startService(restartServiceIntent)
+            }
         } catch (_: Exception) {}
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun setupFloatingBubble() {
-        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        if (bubbleView != null) return
+
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -140,20 +134,21 @@ class FloatingBubbleService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        val savedAlpha = prefs.getFloat("floating_bubble_alpha", 0.85f)
+        val storedAlpha = prefs.getFloat("bubble_alpha", 0.85f)
+        val initialX = prefs.getInt("bubble_x", 16)
+        val initialY = prefs.getInt("bubble_y", 220)
 
         params = WindowManager.LayoutParams(
-            dp(56),
-            dp(56),
+            dp(52),
+            dp(52),
             layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            gravity = Gravity.BOTTOM or Gravity.END
-            x = dp(18)
-            y = dp(95)
-            this.alpha = savedAlpha
+            gravity = Gravity.TOP or Gravity.START
+            x = initialX
+            y = initialY
+            alpha = storedAlpha
         }
 
         val imageView = ImageView(this).apply {
@@ -163,40 +158,49 @@ class FloatingBubbleService : Service() {
                 setColor(Color.parseColor("#141D1B"))
                 setStroke(dp(1.5f), Color.parseColor("#4EDEA3"))
             }
-            setPadding(dp(13), dp(13), dp(13), dp(13))
-            elevation = dp(14).toFloat()
+            elevation = dp(10).toFloat()
+            setPadding(dp(10), dp(10), dp(10), dp(10))
         }
 
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-        var isClick = false
-
-        imageView.setOnTouchListener { _, event ->
+        imageView.setOnTouchListener { view, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = params!!.x
-                    initialY = params!!.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
-                    isClick = true
+                    bubbleInitialX = params?.x ?: 0
+                    bubbleInitialY = params?.y ?: 0
+                    isDragging = false
+                    view.animate().scaleX(0.92f).scaleY(0.92f).setDuration(80).start()
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = (initialTouchX - event.rawX).toInt()
-                    val dy = (initialTouchY - event.rawY).toInt()
-                    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-                        isClick = false
+                    val dx = (event.rawX - initialTouchX).toInt()
+                    val dy = (event.rawY - initialTouchY).toInt()
+                    if (Math.abs(dx) > dp(5) || Math.abs(dy) > dp(5)) {
+                        isDragging = true
                     }
-                    params!!.x = initialX + dx
-                    params!!.y = initialY + dy
-                    try {
-                        windowManager?.updateViewLayout(bubbleView, params)
-                    } catch (_: Exception) {}
+                    if (isDragging) {
+                        params?.x = bubbleInitialX + dx
+                        params?.y = bubbleInitialY + dy
+                        try {
+                            windowManager?.updateViewLayout(bubbleView, params)
+                        } catch (_: Exception) {}
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
+                    view.animate().scaleX(1.0f).scaleY(1.0f).setDuration(120).start()
+                    val dx = (event.rawX - initialTouchX).toInt()
+                    val dy = (event.rawY - initialTouchY).toInt()
+                    val isClick = !isDragging && Math.abs(dx) < dp(8) && Math.abs(dy) < dp(8)
+
+                    params?.let {
+                        prefs.edit()
+                            .putInt("bubble_x", it.x)
+                            .putInt("bubble_y", it.y)
+                            .apply()
+                    }
+
                     if (isClick) {
                         showFloatingQuickEntry()
                     }
@@ -212,9 +216,16 @@ class FloatingBubbleService : Service() {
         } catch (_: Exception) {}
     }
 
+    private var initialTouchX = 0f
+    private var initialTouchY = 0f
+    private var bubbleInitialX = 0
+    private var bubbleInitialY = 0
+    private var isDragging = false
+
     /**
-     * Exact Quick Entry Overlay Window matching image_2a174de6.png.
-     * Features full speech-to-text voice recognition, capsule selectors, and instant sync.
+     * Side edge to side edge, centered on screen, semi-transparent background Quick Entry overlay.
+     * Pure text capsules matching app font, working microphone with permission prompt,
+     * themed time selector for alarm, and auto-dismiss on outside touch or back button.
      */
     @SuppressLint("ClickableViewAccessibility")
     private fun showFloatingQuickEntry() {
@@ -234,32 +245,60 @@ class FloatingBubbleService : Service() {
             WindowManager.LayoutParams.FLAG_DIM_BEHIND,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            dimAmount = 0.65f
+            dimAmount = 0.45f
             gravity = Gravity.CENTER
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         }
 
-        val rootLayout = FrameLayout(this).apply {
-            setBackgroundColor(Color.TRANSPARENT)
+        // Root container: intercepts touches outside the card to dismiss, and catches back button
+        val rootLayout = object : FrameLayout(this) {
+            override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                    dismissOverlay()
+                    return true
+                }
+                return super.dispatchKeyEvent(event)
+            }
+        }.apply {
+            isFocusable = true
+            isFocusableInTouchMode = true
+            setBackgroundColor(Color.argb(105, 0, 0, 0)) // Semi-transparent backdrop scrim
             setOnClickListener { dismissOverlay() }
         }
 
+        // Scrollable wrapper so keyboard won't compress fields
+        val scrollView = ScrollView(this).apply {
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_NEVER
+            setOnClickListener { dismissOverlay() }
+        }
+
+        val scrollCenterWrapper = FrameLayout(this).apply {
+            setOnClickListener { dismissOverlay() }
+        }
+
+        // Card layout: side edge to side edge with 14dp margins, semi-transparent botanical nocturne background
         val cardLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#141D1B"))
-                cornerRadius = dp(28).toFloat()
-                setStroke(dp(1.5f), Color.parseColor("#273B37"))
+                setColor(Color.argb(228, 17, 27, 24)) // ~89% opacity deep botanical nocturne
+                cornerRadius = dp(24).toFloat()
+                setStroke(dp(1.5f), Color.argb(180, 78, 222, 163)) // Subtle glowing emerald outline
             }
-            setPadding(dp(22), dp(22), dp(22), dp(22))
-            elevation = dp(32).toFloat()
-            setOnClickListener { /* prevent dismissal */ }
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            elevation = dp(24).toFloat()
+            setOnClickListener { /* Prevent dismissal when clicking inside the card */ }
         }
 
         val cardParams = FrameLayout.LayoutParams(
-            dp(350),
+            FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.CENTER
+            leftMargin = dp(14)
+            rightMargin = dp(14)
+            topMargin = dp(24)
+            bottomMargin = dp(24)
         }
 
         // 1. Header: ic_bubble_calendar + "Quick Entry" + Close (X)
@@ -269,29 +308,29 @@ class FloatingBubbleService : Service() {
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(14) }
+            ).apply { bottomMargin = dp(12) }
             layoutParams = lp
         }
 
         val headerIcon = ImageView(this).apply {
             setImageResource(R.drawable.ic_bubble_calendar)
-            val lp = LinearLayout.LayoutParams(dp(24), dp(24)).apply { rightMargin = dp(8) }
+            val lp = LinearLayout.LayoutParams(dp(22), dp(22)).apply { rightMargin = dp(8) }
             layoutParams = lp
         }
         headerLayout.addView(headerIcon)
 
         val headerTitle = TextView(this).apply {
             text = "Quick Entry"
-            textSize = 17f
+            textSize = 16f
             setTextColor(Color.parseColor("#F2F7F4"))
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         headerLayout.addView(headerTitle)
 
         val closeBtn = TextView(this).apply {
             text = "✕"
-            textSize = 17f
+            textSize = 16f
             setTextColor(Color.parseColor("#9BB3AA"))
             setPadding(dp(6), dp(6), dp(6), dp(6))
             setOnClickListener { dismissOverlay() }
@@ -302,7 +341,7 @@ class FloatingBubbleService : Service() {
         // 2. Input Box with Emerald Border and Mic Icon inside
         val inputContainer = FrameLayout(this).apply {
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#0E1514"))
+                setColor(Color.argb(200, 14, 21, 20))
                 cornerRadius = dp(16).toFloat()
                 setStroke(dp(1.5f), Color.parseColor("#4EDEA3"))
             }
@@ -318,6 +357,7 @@ class FloatingBubbleService : Service() {
             setHintTextColor(Color.parseColor("#6B827A"))
             setTextColor(Color.parseColor("#F2F7F4"))
             textSize = 14f
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
             background = null
             setPadding(dp(14), dp(12), dp(44), dp(12))
             layoutParams = FrameLayout.LayoutParams(
@@ -325,6 +365,7 @@ class FloatingBubbleService : Service() {
                 FrameLayout.LayoutParams.WRAP_CONTENT
             )
         }
+        currentInputField = inputField
         inputContainer.addView(inputField)
 
         val micButton = ImageView(this).apply {
@@ -340,7 +381,7 @@ class FloatingBubbleService : Service() {
                 rightMargin = dp(8)
             }
             setOnClickListener {
-                toggleVoiceDictation(inputField, this)
+                startVoiceInputWorkflow()
             }
         }
         inputContainer.addView(micButton)
@@ -348,16 +389,22 @@ class FloatingBubbleService : Service() {
 
         var selectedCategory = "TASK"
         var selectedDue = "TODAY"
-        var selectedPriority = "MEDIUM"
+        var selectedPriority = "NORMAL"
         var customDateString: String? = null
         var alarmOn = false
 
-        // 3. CATEGORY Row
+        // Alarm time state: defaults to 9:00 AM
+        val cal = Calendar.getInstance()
+        var alarmHour = 9
+        var alarmMinute = 0
+
+        // 3. CATEGORY Row - Pure capsules with names, font matched
         val catLabel = TextView(this).apply {
             text = "CATEGORY:"
             textSize = 10f
             setTextColor(Color.parseColor("#6B827A"))
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            letterSpacing = 0.05f
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -376,19 +423,19 @@ class FloatingBubbleService : Service() {
         }
 
         val catOptions = listOf(
-            Triple("TASK", "Task", R.drawable.ic_list),
-            Triple("SHOP", "Shop", R.drawable.ic_bag),
-            Triple("PROJECT", "Project", R.drawable.ic_folder)
+            "TASK" to "Task",
+            "SHOP" to "Shop",
+            "PROJECT" to "Project"
         )
         val catButtons = mutableListOf<Button>()
 
-        catOptions.forEach { (catId, catText, iconRes) ->
+        catOptions.forEach { (catId, catText) ->
             val btn = Button(this).apply {
-                text = "  $catText"
-                textSize = 11f
+                text = catText
+                textSize = 12f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 isAllCaps = false
-                setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
-                layoutParams = LinearLayout.LayoutParams(0, dp(34), 1f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f).apply {
                     setMargins(dp(2), 0, dp(2), 0)
                 }
             }
@@ -398,11 +445,11 @@ class FloatingBubbleService : Service() {
 
         fun updateCategoryStyles() {
             catButtons.forEachIndexed { idx, btn ->
-                val (catId, _, _) = catOptions[idx]
+                val (catId, _) = catOptions[idx]
                 val isSel = catId == selectedCategory
                 btn.setTextColor(Color.parseColor(if (isSel) "#4EDEA3" else "#9BB3AA"))
                 btn.background = GradientDrawable().apply {
-                    setColor(Color.parseColor(if (isSel) "#183B2E" else "#141D1B"))
+                    setColor(if (isSel) Color.argb(85, 78, 222, 163) else Color.argb(120, 20, 29, 27))
                     cornerRadius = dp(12).toFloat()
                     setStroke(dp(1), Color.parseColor(if (isSel) "#4EDEA3" else "#273B37"))
                 }
@@ -415,12 +462,13 @@ class FloatingBubbleService : Service() {
         updateCategoryStyles()
         cardLayout.addView(catLayout)
 
-        // 4. DUE DATE Row
+        // 4. DUE DATE Row - Pure capsules with names, font matched
         val dueLabel = TextView(this).apply {
             text = "DUE DATE:"
             textSize = 10f
             setTextColor(Color.parseColor("#6B827A"))
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            letterSpacing = 0.05f
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -447,11 +495,11 @@ class FloatingBubbleService : Service() {
 
         dueOptions.forEach { (dId, dLabel) ->
             val btn = Button(this).apply {
-                text = "  $dLabel"
-                textSize = 11f
+                text = dLabel
+                textSize = 12f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 isAllCaps = false
-                setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_calendar_small, 0, 0, 0)
-                layoutParams = LinearLayout.LayoutParams(0, dp(34), 1f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f).apply {
                     setMargins(dp(2), 0, dp(2), 0)
                 }
             }
@@ -463,10 +511,15 @@ class FloatingBubbleService : Service() {
             dueButtons.forEachIndexed { idx, btn ->
                 val (dId, dLabel) = dueOptions[idx]
                 val isSel = dId == selectedDue
-                btn.text = if (dId == "PICK_DATE" && customDateString != null) "  $customDateString" else "  $dLabel"
+                val displayLabel = if (dId == "PICK_DATE" && customDateString != null) {
+                    customDateString ?: dLabel
+                } else {
+                    dLabel
+                }
+                btn.text = displayLabel
                 btn.setTextColor(Color.parseColor(if (isSel) "#4EDEA3" else "#9BB3AA"))
                 btn.background = GradientDrawable().apply {
-                    setColor(Color.parseColor(if (isSel) "#183B2E" else "#141D1B"))
+                    setColor(if (isSel) Color.argb(85, 78, 222, 163) else Color.argb(120, 20, 29, 27))
                     cornerRadius = dp(12).toFloat()
                     setStroke(dp(1), Color.parseColor(if (isSel) "#4EDEA3" else "#273B37"))
                 }
@@ -475,8 +528,9 @@ class FloatingBubbleService : Service() {
                         val c = Calendar.getInstance()
                         val dpd = DatePickerDialog(
                             this@FloatingBubbleService,
-                            { _, year, monthOfYear, dayOfMonth ->
-                                customDateString = String.format("%04d-%02d-%02d", year, monthOfYear + 1, dayOfMonth)
+                            R.style.Theme_LifeDeck_Dialog,
+                            { _, y, m, d ->
+                                customDateString = String.format(Locale.US, "%04d-%02d-%02d", y, m + 1, d)
                                 selectedDue = "PICK_DATE"
                                 updateDueStyles()
                             },
@@ -486,6 +540,9 @@ class FloatingBubbleService : Service() {
                         )
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             dpd.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            dpd.window?.setType(WindowManager.LayoutParams.TYPE_PHONE)
                         }
                         dpd.show()
                     } else {
@@ -498,12 +555,13 @@ class FloatingBubbleService : Service() {
         updateDueStyles()
         cardLayout.addView(dueLayout)
 
-        // 5. PRIORITY Row
+        // 5. PRIORITY Row - Pure capsules with names, font matched
         val prioLabel = TextView(this).apply {
             text = "PRIORITY:"
             textSize = 10f
             setTextColor(Color.parseColor("#6B827A"))
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            letterSpacing = 0.05f
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -522,14 +580,15 @@ class FloatingBubbleService : Service() {
         }
 
         val prioButtons = mutableListOf<Button>()
-        val prioOptions = listOf("HIGH" to "• High", "MEDIUM" to "• Medium", "LOW" to "• Low")
+        val prioOptions = listOf("LOW" to "Low", "NORMAL" to "Normal", "URGENT" to "Urgent")
 
         prioOptions.forEach { (pId, pLabel) ->
             val btn = Button(this).apply {
                 text = pLabel
-                textSize = 11f
+                textSize = 12f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 isAllCaps = false
-                layoutParams = LinearLayout.LayoutParams(0, dp(34), 1f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f).apply {
                     setMargins(dp(2), 0, dp(2), 0)
                 }
             }
@@ -541,11 +600,12 @@ class FloatingBubbleService : Service() {
             prioButtons.forEachIndexed { idx, btn ->
                 val (pId, _) = prioOptions[idx]
                 val isSel = pId == selectedPriority
-                btn.setTextColor(Color.parseColor(if (isSel) "#4EDEA3" else "#9BB3AA"))
+                val activeColor = if (pId == "URGENT") "#F87171" else if (pId == "NORMAL") "#4EDEA3" else "#A7F3D0"
+                btn.setTextColor(Color.parseColor(if (isSel) activeColor else "#9BB3AA"))
                 btn.background = GradientDrawable().apply {
-                    setColor(Color.parseColor(if (isSel) "#183B2E" else "#141D1B"))
+                    setColor(if (isSel) Color.argb(85, 78, 222, 163) else Color.argb(120, 20, 29, 27))
                     cornerRadius = dp(12).toFloat()
-                    setStroke(dp(1), Color.parseColor(if (isSel) "#4EDEA3" else "#273B37"))
+                    setStroke(dp(1), Color.parseColor(if (isSel) activeColor else "#273B37"))
                 }
                 btn.setOnClickListener {
                     selectedPriority = pId
@@ -556,182 +616,256 @@ class FloatingBubbleService : Service() {
         updatePriorityStyles()
         cardLayout.addView(prioLayout)
 
-        // 6. SET ALARM Row
-        val alarmLayout = LinearLayout(this).apply {
+        // 6. SET ALARM Row with Time Selector
+        val alarmRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(14) }
+            ).apply { bottomMargin = dp(8) }
             layoutParams = lp
         }
-
-        val alarmIcon = ImageView(this).apply {
-            setImageResource(R.drawable.ic_bell)
-            val lp = LinearLayout.LayoutParams(dp(18), dp(18)).apply { rightMargin = dp(6) }
-            layoutParams = lp
-        }
-        alarmLayout.addView(alarmIcon)
 
         val alarmText = TextView(this).apply {
-            text = "SET ALARM:"
-            textSize = 10f
-            setTextColor(Color.parseColor("#6B827A"))
-            typeface = Typeface.DEFAULT_BOLD
+            text = "SET ALARM"
+            textSize = 11f
+            setTextColor(Color.parseColor("#9BB3AA"))
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            letterSpacing = 0.05f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        alarmLayout.addView(alarmText)
+        alarmRow.addView(alarmText)
 
         val alarmToggle = TextView(this).apply {
             text = "Off"
             textSize = 11f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(Color.parseColor("#9BB3AA"))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#141D1B"))
-                cornerRadius = dp(8).toFloat()
+                setColor(Color.argb(120, 27, 39, 36))
+                cornerRadius = dp(14).toFloat()
                 setStroke(dp(1), Color.parseColor("#273B37"))
             }
             setPadding(dp(12), dp(4), dp(12), dp(4))
+            isClickable = true
+        }
+        alarmRow.addView(alarmToggle)
+        cardLayout.addView(alarmRow)
+
+        // Themed Time Selector Container (Shown when alarm is enabled)
+        val timeSelectorContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(Color.argb(180, 14, 21, 20))
+                cornerRadius = dp(14).toFloat()
+                setStroke(dp(1), Color.parseColor("#273B37"))
+            }
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(14) }
+            layoutParams = lp
+            visibility = View.GONE
+        }
+
+        val timeHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(6) }
+            layoutParams = lp
+        }
+
+        fun formatTimeDisplay(h: Int, m: Int): String {
+            val amPm = if (h >= 12) "PM" else "AM"
+            val displayHour = when {
+                h == 0 -> 12
+                h > 12 -> h - 12
+                else -> h
+            }
+            return String.format(Locale.US, "%02d:%02d %s", displayHour, m, amPm)
+        }
+
+        val timeDisplay = TextView(this).apply {
+            text = "Time: " + formatTimeDisplay(alarmHour, alarmMinute)
+            textSize = 12f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setTextColor(Color.parseColor("#4EDEA3"))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        timeHeaderRow.addView(timeDisplay)
+
+        val changeTimeBtn = TextView(this).apply {
+            text = "Pick Time ⏰"
+            textSize = 11f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(Color.parseColor("#9BB3AA"))
+            background = GradientDrawable().apply {
+                setColor(Color.argb(150, 27, 39, 36))
+                cornerRadius = dp(10).toFloat()
+                setStroke(dp(1), Color.parseColor("#38534C"))
+            }
+            setPadding(dp(8), dp(4), dp(8), dp(4))
             setOnClickListener {
-                alarmOn = !alarmOn
-                text = if (alarmOn) "On" else "Off"
-                setTextColor(Color.parseColor(if (alarmOn) "#4EDEA3" else "#9BB3AA"))
-                background = GradientDrawable().apply {
-                    setColor(Color.parseColor(if (alarmOn) "#183B2E" else "#141D1B"))
-                    cornerRadius = dp(8).toFloat()
-                    setStroke(dp(1), Color.parseColor(if (alarmOn) "#4EDEA3" else "#273B37"))
+                val tpd = TimePickerDialog(
+                    this@FloatingBubbleService,
+                    R.style.Theme_LifeDeck_Dialog,
+                    { _, h, m ->
+                        alarmHour = h
+                        alarmMinute = m
+                        timeDisplay.text = "Time: " + formatTimeDisplay(alarmHour, alarmMinute)
+                    },
+                    alarmHour,
+                    alarmMinute,
+                    false
+                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    tpd.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                } else {
+                    @Suppress("DEPRECATION")
+                    tpd.window?.setType(WindowManager.LayoutParams.TYPE_PHONE)
                 }
+                tpd.show()
             }
         }
-        alarmLayout.addView(alarmToggle)
-        cardLayout.addView(alarmLayout)
+        timeHeaderRow.addView(changeTimeBtn)
+        timeSelectorContainer.addView(timeHeaderRow)
 
-        // 7. SAVE Button (Full width rounded emerald button)
+        // Quick time chips: 9 AM, 12:30 PM, 6 PM
+        val quickChipsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            layoutParams = lp
+        }
+
+        val quickTimes = listOf(
+            Triple("9:00 AM", 9, 0),
+            Triple("12:30 PM", 12, 30),
+            Triple("6:00 PM", 18, 0)
+        )
+
+        quickTimes.forEach { (label, h, m) ->
+            val chip = TextView(this).apply {
+                text = label
+                textSize = 10.5f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(Color.parseColor("#9BB3AA"))
+                background = GradientDrawable().apply {
+                    setColor(Color.argb(100, 27, 39, 36))
+                    cornerRadius = dp(8).toFloat()
+                    setStroke(dp(1), Color.parseColor("#273B37"))
+                }
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(dp(2), 0, dp(2), 0)
+                }
+                gravity = Gravity.CENTER
+                setOnClickListener {
+                    alarmHour = h
+                    alarmMinute = m
+                    timeDisplay.text = "Time: " + formatTimeDisplay(alarmHour, alarmMinute)
+                }
+            }
+            quickChipsRow.addView(chip)
+        }
+        timeSelectorContainer.addView(quickChipsRow)
+        cardLayout.addView(timeSelectorContainer)
+
+        alarmToggle.setOnClickListener {
+            alarmOn = !alarmOn
+            if (alarmOn) {
+                alarmToggle.text = "Alarm ON"
+                alarmToggle.setTextColor(Color.parseColor("#003824"))
+                alarmToggle.background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#4EDEA3"))
+                    cornerRadius = dp(14).toFloat()
+                }
+                timeSelectorContainer.visibility = View.VISIBLE
+            } else {
+                alarmToggle.text = "Off"
+                alarmToggle.setTextColor(Color.parseColor("#9BB3AA"))
+                alarmToggle.background = GradientDrawable().apply {
+                    setColor(Color.argb(120, 27, 39, 36))
+                    cornerRadius = dp(14).toFloat()
+                    setStroke(dp(1), Color.parseColor("#273B37"))
+                }
+                timeSelectorContainer.visibility = View.GONE
+            }
+        }
+
+        // 7. Full-width SAVE button
         val saveBtn = Button(this).apply {
-            text = "SAVE ✈"
+            text = "SAVE  ✈"
             textSize = 14f
-            isAllCaps = false
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             setTextColor(Color.parseColor("#003824"))
-            typeface = Typeface.DEFAULT_BOLD
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#4EDEA3"))
-                cornerRadius = dp(14).toFloat()
+                cornerRadius = dp(16).toFloat()
             }
-            layoutParams = LinearLayout.LayoutParams(
+            isAllCaps = false
+            val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(46)
-            ).apply { bottomMargin = dp(10) }
-
+            ).apply {
+                topMargin = dp(6)
+            }
+            layoutParams = lp
             setOnClickListener {
-                val text = inputField.text.toString().trim()
-                if (text.isEmpty()) {
-                    dismissOverlay()
+                val textVal = inputField.text.toString().trim()
+                if (textVal.isEmpty()) {
+                    Toast.makeText(this@FloatingBubbleService, "Please type or speak an entry", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
-                saveEntryLocallyAndSync(text, selectedCategory, selectedPriority, selectedDue, customDateString)
-                Toast.makeText(this@FloatingBubbleService, "✓ Saved to LifeDeck", Toast.LENGTH_SHORT).show()
+                saveEntryLocallyAndSync(
+                    text = textVal,
+                    category = selectedCategory,
+                    priority = selectedPriority,
+                    due = selectedDue,
+                    customDate = customDateString,
+                    alarmOn = alarmOn,
+                    alarmHour = alarmHour,
+                    alarmMinute = alarmMinute
+                )
                 dismissOverlay()
+                Toast.makeText(this@FloatingBubbleService, "Saved to $selectedCategory", Toast.LENGTH_SHORT).show()
             }
         }
         cardLayout.addView(saveBtn)
 
-        // 8. Footer Tip
-        val tipView = TextView(this).apply {
-            text = "Tip: If nothing is selected, entry saves directly to Inbox for end-of-day scheduling."
-            textSize = 10f
-            setTextColor(Color.parseColor("#6B827A"))
-            gravity = Gravity.CENTER_HORIZONTAL
-        }
-        cardLayout.addView(tipView)
+        scrollCenterWrapper.addView(cardLayout, cardParams)
+        scrollView.addView(scrollCenterWrapper)
+        rootLayout.addView(scrollView)
 
-        rootLayout.addView(cardLayout, cardParams)
         overlayDialogView = rootLayout
 
         try {
             windowManager?.addView(overlayDialogView, overlayParams)
+            rootLayout.requestFocus()
         } catch (_: Exception) {}
     }
 
-    private fun toggleVoiceDictation(editText: EditText, micBtn: ImageView) {
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            Toast.makeText(this, "Speech recognition not available", Toast.LENGTH_SHORT).show()
-            return
-        }
+    private fun startVoiceInputWorkflow() {
+        val hasPerm = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
 
-        if (isListening) {
-            speechRecognizer?.stopListening()
-            isListening = false
-            micBtn.background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#22312D"))
-                setStroke(dp(1), Color.parseColor("#273B37"))
-            }
-            return
+        val intent = Intent(this, VoicePermissionActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {
-                    isListening = true
-                    micBtn.background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(Color.parseColor("#183B2E"))
-                        setStroke(dp(1.5f), Color.parseColor("#4EDEA3"))
-                    }
-                    Toast.makeText(this@FloatingBubbleService, "Listening...", Toast.LENGTH_SHORT).show()
-                }
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {
-                    isListening = false
-                    micBtn.background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(Color.parseColor("#22312D"))
-                        setStroke(dp(1), Color.parseColor("#273B37"))
-                    }
-                }
-                override fun onError(error: Int) {
-                    isListening = false
-                    micBtn.background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(Color.parseColor("#22312D"))
-                        setStroke(dp(1), Color.parseColor("#273B37"))
-                    }
-                }
-                override fun onResults(results: Bundle?) {
-                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    if (!matches.isNullOrEmpty()) {
-                        val spoken = matches[0]
-                        val current = editText.text.toString().trim()
-                        editText.setText(if (current.isEmpty()) spoken else "$current $spoken")
-                        editText.setSelection(editText.text.length)
-                    }
-                }
-                override fun onPartialResults(partialResults: Bundle?) {
-                    val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    if (!matches.isNullOrEmpty()) {
-                        editText.setText(matches[0])
-                        editText.setSelection(editText.text.length)
-                    }
-                }
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
-        }
-
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-        }
-        speechRecognizer?.startListening(intent)
+        startActivity(intent)
     }
 
     private fun dismissOverlay() {
-        speechRecognizer?.destroy()
-        speechRecognizer = null
-        isListening = false
+        currentInputField = null
         overlayDialogView?.let {
             try {
                 windowManager?.removeView(it)
@@ -745,34 +879,62 @@ class FloatingBubbleService : Service() {
         category: String,
         priority: String,
         due: String,
-        customDate: String?
+        customDate: String?,
+        alarmOn: Boolean,
+        alarmHour: Int,
+        alarmMinute: Int
     ) {
         val now = System.currentTimeMillis()
+        val c = Calendar.getInstance()
+
         val dueTimestamp = when (due) {
-            "TOMORROW" -> now + 86400000L
+            "TOMORROW" -> {
+                c.add(Calendar.DAY_OF_YEAR, 1)
+                c.set(Calendar.HOUR_OF_DAY, if (alarmOn) alarmHour else 12)
+                c.set(Calendar.MINUTE, if (alarmOn) alarmMinute else 0)
+                c.set(Calendar.SECOND, 0)
+                c.timeInMillis
+            }
             "PICK_DATE" -> {
                 if (customDate != null) {
                     val parts = customDate.split("-").map { it.toIntOrNull() ?: 0 }
                     if (parts.size == 3) {
                         Calendar.getInstance().apply {
-                            set(parts[0], parts[1] - 1, parts[2], 12, 0, 0)
+                            set(parts[0], parts[1] - 1, parts[2], if (alarmOn) alarmHour else 12, if (alarmOn) alarmMinute else 0, 0)
                         }.timeInMillis
                     } else now
                 } else now
             }
-            else -> now
+            else -> {
+                c.set(Calendar.HOUR_OF_DAY, if (alarmOn) alarmHour else 12)
+                c.set(Calendar.MINUTE, if (alarmOn) alarmMinute else 0)
+                c.set(Calendar.SECOND, 0)
+                c.timeInMillis
+            }
         }
 
+        val entryType = when (category) {
+            "SHOP" -> "SHOPPING"
+            "PROJECT" -> "PROJECT"
+            else -> "TASK"
+        }
+
+        val entryId = if (category == "PROJECT") "proj-$now" else "entry-$now"
+
         val entryObj = JSONObject().apply {
-            put("id", "entry-$now")
+            put("id", entryId)
             put("title", text)
-            put("type", if (category == "SHOP") "SHOPPING" else "TASK")
-            put("status", if (category == "TASK" && due == "NONE") "INBOX" else "ACTIVE")
+            put("type", entryType)
+            put("category", category)
+            put("status", if (entryType == "TASK" && due == "NONE") "INBOX" else "ACTIVE")
             put("priority", priority)
             put("dueAt", dueTimestamp)
             put("scheduledAt", dueTimestamp)
             put("createdAt", now)
             put("updatedAt", now)
+            if (category == "SHOP") {
+                put("bucket", "NOW")
+            }
         }
 
         val entryJsonStr = entryObj.toString()
@@ -790,7 +952,12 @@ class FloatingBubbleService : Service() {
         // 2. Instant Live Sync into active MainActivity WebView if running
         MainActivity.pushOverlayEntry(entryJsonStr)
 
-        // 3. Send to Google Sheets immediately in background
+        // 3. Schedule Alarm if requested
+        if (alarmOn) {
+            scheduleDirectAlarm(entryId, text, dueTimestamp, entryType)
+        }
+
+        // 4. Send to Google Sheets immediately in background
         val webhookUrl = prefs.getString("sheets_webhook_url", null)
         if (!webhookUrl.isNullOrBlank()) {
             CoroutineScope(Dispatchers.IO).launch {
@@ -801,13 +968,13 @@ class FloatingBubbleService : Service() {
                     }
 
                     val rowObj = JSONObject().apply {
-                        put("id", "entry-$now")
+                        put("id", entryId)
                         put("op", "CREATE")
                         put("title", text)
                         put("status", "ACTIVE")
-                        put("type", if (category == "SHOP") "SHOPPING" else "TASK")
+                        put("type", entryType)
                         put("priority", priority)
-                        put("dueAt", java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).format(dueTimestamp))
+                        put("dueAt", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(dueTimestamp))
                         put("row", entryObj)
                     }
 
@@ -829,6 +996,7 @@ class FloatingBubbleService : Service() {
                         os.write(payload.toString().toByteArray(Charsets.UTF_8))
                         os.flush()
                     }
+
                     val code = conn.responseCode
                     conn.disconnect()
                     android.util.Log.d("LifeDeckBubble", "Sheets quick sync response: $code")
@@ -836,6 +1004,39 @@ class FloatingBubbleService : Service() {
                     android.util.Log.w("LifeDeckBubble", "Background sheets sync failed", err)
                 }
             }
+        }
+    }
+
+    private fun scheduleDirectAlarm(id: String, title: String, triggerAtMillis: Long, type: String) {
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+                // Cannot schedule exact alarm without permission
+                return
+            }
+
+            val intent = Intent(this, ReminderReceiver::class.java).apply {
+                action = ReminderReceiver.ACTION_DIRECT_ALARM
+                putExtra("EXTRA_ID", id)
+                putExtra("EXTRA_TITLE", title)
+                putExtra("EXTRA_TYPE", type)
+            }
+
+            val pending = PendingIntent.getBroadcast(
+                this,
+                ("alarm:$id").hashCode() and 0x7FFFFFFF,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            AlarmManagerCompat.setExactAndAllowWhileIdle(
+                alarmManager,
+                AlarmManager.RTC_WAKEUP,
+                triggerAtMillis,
+                pending
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("LifeDeckBubble", "Failed scheduling alarm", e)
         }
     }
 
@@ -901,5 +1102,15 @@ class FloatingBubbleService : Service() {
         const val ACTION_SHOW_QUICK_ENTRY = "com.lifedeck.app.SHOW_QUICK_ENTRY"
         private const val CHANNEL_ID = "lifedeck_overlay_channel"
         private const val NOTIFICATION_ID = 8921
+
+        var currentInputField: EditText? = null
+
+        fun setSpokenText(spoken: String) {
+            currentInputField?.post {
+                val existing = currentInputField?.text?.toString()?.trim() ?: ""
+                currentInputField?.setText(if (existing.isEmpty()) spoken else "$existing $spoken")
+                currentInputField?.setSelection(currentInputField?.text?.length ?: 0)
+            }
+        }
     }
 }

@@ -53,6 +53,20 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".service.QuickEntryLaunchActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
+
+        <activity
+            android:name=".service.VoicePermissionActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
+
         <!-- Fires scheduled reminders (exact alarms) -->
         <receiver
             android:name=".notify.ReminderReceiver"

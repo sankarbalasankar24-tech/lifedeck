@@ -4,6 +4,13 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowBackground">#0E1514</item>
+    </style>
+
+    <style name="Theme.LifeDeck.Dialog" parent="android:Theme.DeviceDefault.Dialog.Alert">
+        <item name="android:colorAccent">#4EDEA3</item>
+        <item name="android:textColorPrimary">#F2F7F4</item>
+        <item name="android:textColorSecondary">#9BB3AA</item>
+        <item name="android:windowBackground">#141D1B</item>
     </style>
 </resources>
