@@ -55,7 +55,19 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        var instance: MainActivity? = null
         val deepLinks = kotlinx.coroutines.flow.MutableSharedFlow<DeepLink>(replay = 1, extraBufferCapacity = 4)
+
+        fun pushOverlayEntry(entryJsonStr: String) {
+            try {
+                val quoted = org.json.JSONObject.quote(entryJsonStr)
+                instance?.runOnUiThread {
+                    instance?.webView?.evaluateJavascript("if (window.onOverlayEntrySaved) { window.onOverlayEntrySaved(" + quoted + "); }", null)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("MainActivity", "Could not push overlay entry to webview", e)
+            }
+        }
     }
 
     private lateinit var webView: WebView
@@ -564,5 +576,12 @@ class MainActivity : ComponentActivity() {
             prefs.edit().remove("pending_overlay_entries").apply()
             return entriesJson
         }
+    }
+
+    override fun onDestroy() {
+        if (instance == this) {
+            instance = null
+        }
+        super.onDestroy()
     }
 }

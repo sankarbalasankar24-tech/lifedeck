@@ -788,17 +788,7 @@ class FloatingBubbleService : Service() {
         }
 
         // 2. Instant Live Sync into active MainActivity WebView if running
-        try {
-            val escaped = entryJsonStr.replace("\\", "\\\\").replace("'", "\\'")
-            MainActivity.instance?.runOnUiThread {
-                MainActivity.instance?.webView?.evaluateJavascript(
-                    "window.onOverlayEntrySaved && window.onOverlayEntrySaved('$escaped')",
-                    null
-                )
-            }
-        } catch (e: Exception) {
-            android.util.Log.w("LifeDeckBubble", "Could not pass to live WebView", e)
-        }
+        MainActivity.pushOverlayEntry(entryJsonStr)
 
         // 3. Send to Google Sheets immediately in background
         val webhookUrl = prefs.getString("sheets_webhook_url", null)
